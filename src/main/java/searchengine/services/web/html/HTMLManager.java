@@ -13,14 +13,12 @@ import org.jsoup.select.Elements;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import searchengine.model.implementation.Page;
-import searchengine.repository.implementation.PageRepository;
 import searchengine.repository.implementation.SiteRepository;
 
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 
