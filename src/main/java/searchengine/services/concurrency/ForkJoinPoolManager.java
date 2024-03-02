@@ -61,4 +61,14 @@ public class ForkJoinPoolManager {
             logger.error("Ошибка при попытке дождаться завершения потока: {}", e.getMessage(), e);
         }
     }
+
+
+    public static void executeDelay(int millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            logger.error("Поток прерван во время выполнения задержки", e);
+            throw new RuntimeException(e);
+        }
+    }
 }

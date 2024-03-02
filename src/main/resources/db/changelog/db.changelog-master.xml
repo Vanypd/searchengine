@@ -21,7 +21,7 @@
             <column name="last_error" type="TEXT"/>
 
             <column name="url" type="VARCHAR(255)">
-                <constraints nullable="false"/>
+                <constraints nullable="false" unique="true"/>
             </column>
 
             <column name="name" type="VARCHAR(255)">

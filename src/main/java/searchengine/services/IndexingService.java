@@ -4,14 +4,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import searchengine.config.SiteProps;
 import searchengine.config.SitesList;
 import searchengine.dto.indexing.IndexingErrorResponse;
 import searchengine.dto.indexing.IndexingResponse;
 import searchengine.model.implementation.IndexStatus;
 import searchengine.model.implementation.Site;
 import searchengine.repository.RepositoryManager;
-import searchengine.repository.implementation.PageRepository;
-import searchengine.repository.implementation.SiteRepository;
 import searchengine.services.concurrency.ForkJoinPoolManager;
 import searchengine.services.web.scraping.ContentExtractorAction;
 
@@ -26,8 +25,6 @@ public class IndexingService extends DefaultService {
 
     private final SitesList sitesList;
     private final ForkJoinPoolManager forkJoinPoolManager;
-    private final SiteRepository siteRepository;
-    private final PageRepository pageRepository;
     private boolean isIndexing = false;
 
 
@@ -35,15 +32,11 @@ public class IndexingService extends DefaultService {
 
 
     @Autowired
-    public IndexingService(SitesList sitesList,
-                           RepositoryManager repositoryManager,
+    public IndexingService(SitesList sitesList, RepositoryManager repositoryManager,
                            ForkJoinPoolManager forkJoinPoolManager) {
-
         super(repositoryManager);
         this.sitesList = sitesList;
         this.forkJoinPoolManager = forkJoinPoolManager;
-        siteRepository = repositoryManager.getSiteRepository();
-        pageRepository = repositoryManager.getPageRepository();
     }
 
 
@@ -58,39 +51,31 @@ public class IndexingService extends DefaultService {
         }
 
         isIndexing = true;
-        AtomicInteger errorsCount = new AtomicInteger();
         siteRepository.deleteAll();
         pageRepository.deleteAll();
+
+        AtomicInteger errorsCount = new AtomicInteger();
         List<Runnable> tasks = new ArrayList<>();
 
-        sitesList.getSites().forEach(site ->
-            tasks.add(() -> {
-                Site siteEntity = new Site();
-                siteEntity.setUrl(site.getUrl());
-                siteEntity.setName(site.getName());
-                siteEntity.setIndexStatus(IndexStatus.INDEXING);
-                siteEntity.setLastError(null);
-                siteEntity.setStatusTime(LocalDateTime.now());
-                siteRepository.save(siteEntity);
+        sitesList.getSites().forEach(site -> tasks.add(() -> {
+            Site siteEntity = mapSiteEntityFromSiteList(site);
+            ContentExtractorAction action = new ContentExtractorAction(repositoryManager, siteEntity.getUrl());
 
-                ContentExtractorAction action = new ContentExtractorAction(repositoryManager, site.getUrl());
+            if (hasErrorsDuringInvocation(action, siteEntity)) {
+                errorsCount.getAndIncrement();
+                return;
+            }
 
-                if (!invokeAction(action, siteEntity)) {
-                    errorsCount.getAndIncrement();
-                    return;
-                }
-
-                siteEntity.setIndexStatus(IndexStatus.INDEXED);
-                siteRepository.save(siteEntity);
-            })
-        );
+            siteEntity.setIndexStatus(IndexStatus.INDEXED);
+            siteRepository.save(siteEntity);
+        }));
 
         forkJoinPoolManager.executeAwait(tasks);
         isIndexing = false;
 
         if (errorsCount.get() != 0) {
             return getFailedResponse(
-                    new IndexingErrorResponse("Ошибка индексации на " + errorsCount.get() + " сайтах")
+                    new IndexingErrorResponse("Индексация закончена с ошибкой на " + errorsCount.get() + " сайтах")
             );
         }
 
@@ -114,37 +99,22 @@ public class IndexingService extends DefaultService {
 
     public ResponseEntity<IndexingResponse> indexPage(String url) {
         logger.info("Вызвана индексация отдельной страницы: {}", url);
-        boolean urlInBounds = false;
-        Site siteEntity = null;
 
-        for (Site site : siteRepository.findAll()) {
-            if (url.contains(site.getUrl())) {
-                urlInBounds = true;
-                siteEntity = site;
-                break;
-            }
+        Site siteEntity = getSiteEntityFromUrl(url);
+
+        if (siteEntity == null) {
+            String errorMessage = "Данная страница находится за пределами сайтов, указанных в конфигурационном файле";
+            return getFailedResponse(new IndexingErrorResponse(errorMessage));
         }
 
-        if (!urlInBounds) {
-            return getFailedResponse(new IndexingErrorResponse(
-                    "Данная страница находится за пределами сайтов," +
-                            "указанных в конфигурационном файле"
-            ));
-        }
 
         siteEntity.setIndexStatus(IndexStatus.INDEXING);
         siteRepository.save(siteEntity);
 
         ContentExtractorAction action = new ContentExtractorAction(repositoryManager, siteEntity.getUrl());
 
-        try {
-            forkJoinPoolManager.executeAwait(action::invoke);
-        } catch (Exception e) {
-            logger.error("Ошибка во время индексации сайта {}: {}", siteEntity.getUrl(), e.getMessage(), e);
-            siteEntity.setIndexStatus(IndexStatus.FAILED);
-            return getFailedResponse(
-                    new IndexingErrorResponse("Ошибка во время индексации сайта: " + e.getMessage())
-            );
+        if (hasErrorsDuringInvocation(action, siteEntity)) {
+            return getFailedResponse(new IndexingErrorResponse("Ошибка во время индексации страницы сайта"));
         }
 
         siteEntity.setIndexStatus(IndexStatus.INDEXED);
@@ -156,38 +126,62 @@ public class IndexingService extends DefaultService {
     // UTILS METHODS //
 
 
-    private boolean invokeAction(RecursiveAction action, Site siteEntity) {
+    private Site mapSiteEntityFromSiteList(SiteProps site) {
+        Site siteEntity = new Site();
+        siteEntity.setUrl(site.getUrl());
+        siteEntity.setName(site.getName());
+        siteEntity.setIndexStatus(IndexStatus.INDEXING);
+        siteEntity.setLastError(null);
+        siteEntity.setStatusTime(LocalDateTime.now());
+        siteRepository.save(siteEntity);
+        return siteEntity;
+    }
+
+
+    private Site getSiteEntityFromUrl(String url) {
+        Site siteEntity = null;
+
+        for (SiteProps site : sitesList.getSites()) {
+            if (url.contains(site.getUrl())) {
+                siteEntity = siteRepository.findByUrl(site.getUrl());
+            }
+        }
+
+        return siteEntity;
+    }
+
+
+    private static boolean hasErrorsDuringInvocation(RecursiveAction action, Site siteEntity) {
         try {
             action.invoke();
-            return true;
+            return false;
         } catch (Exception e) {
             logger.error("Ошибка во время индексации сайта {}: {}", siteEntity.getUrl(), e.getMessage(), e);
             siteEntity.setIndexStatus(IndexStatus.FAILED);
-            return false;
+            return true;
         }
     }
-
 
 
     // RESPONSE GETTERS //
 
 
-    protected ResponseEntity<IndexingResponse> getSuccessResponse(IndexingResponse body) {
+    private ResponseEntity<IndexingResponse> getSuccessResponse(IndexingResponse body) {
         return ResponseEntity.ok(body);
     }
 
 
-    protected ResponseEntity<IndexingResponse> getSuccessResponse(HttpStatus status) {
+    private ResponseEntity<IndexingResponse> getSuccessResponse(HttpStatus status) {
         return ResponseEntity.status(status).build();
     }
 
 
-    protected ResponseEntity<IndexingResponse> getSuccessResponse(HttpStatus status, IndexingResponse body) {
+    private ResponseEntity<IndexingResponse> getSuccessResponse(HttpStatus status, IndexingResponse body) {
         return ResponseEntity.status(status).body(body);
     }
 
 
-    protected ResponseEntity<IndexingResponse> getFailedResponse(IndexingResponse body) {
+    private ResponseEntity<IndexingResponse> getFailedResponse(IndexingResponse body) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 }

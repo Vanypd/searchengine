@@ -7,13 +7,20 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import searchengine.dto.indexing.IndexingResponse;
 import searchengine.repository.RepositoryManager;
+import searchengine.repository.implementation.PageRepository;
+import searchengine.repository.implementation.SiteRepository;
 
 public abstract class DefaultService {
-    protected final RepositoryManager repositoryManager;
     protected static final Logger logger = LoggerFactory.getLogger(DefaultService.class);
+    protected final RepositoryManager repositoryManager;
+    protected final SiteRepository siteRepository;
+    protected final PageRepository pageRepository;
+
 
     @Autowired
     public DefaultService(RepositoryManager repositoryManager) {
         this.repositoryManager = repositoryManager;
+        siteRepository = repositoryManager.getSiteRepository();
+        pageRepository = repositoryManager.getPageRepository();
     }
 }

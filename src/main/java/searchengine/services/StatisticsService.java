@@ -2,7 +2,7 @@ package searchengine.services;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import searchengine.config.Site;
+import searchengine.config.SiteProps;
 import searchengine.config.SitesList;
 import searchengine.dto.statistics.DetailedStatisticsItem;
 import searchengine.dto.statistics.StatisticsData;
@@ -39,9 +39,9 @@ public class StatisticsService extends DefaultService {
         total.setIndexing(true);
 
         List<DetailedStatisticsItem> detailed = new ArrayList<>();
-        List<Site> sitesList = sites.getSites();
+        List<SiteProps> sitesList = sites.getSites();
         for(int i = 0; i < sitesList.size(); i++) {
-            Site site = sitesList.get(i);
+            SiteProps site = sitesList.get(i);
             DetailedStatisticsItem item = new DetailedStatisticsItem();
             item.setName(site.getName());
             item.setUrl(site.getUrl());
