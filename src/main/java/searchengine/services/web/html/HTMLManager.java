@@ -14,39 +14,36 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import searchengine.model.implementation.Page;
 import searchengine.repository.implementation.SiteRepository;
+import searchengine.services.utils.URLParser;
 
 import java.io.IOException;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
 public class HTMLManager {
-    private static final Logger logger = LoggerFactory.getLogger(HTMLManager.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(HTMLManager.class);
 
 
     private HTMLManager() {}
 
 
-    public static Document getHTMLDocument(@NonNull URL url) {
-        Document doc = null;
-
-        try {
-            doc = Jsoup.connect(url.toString()).get();
-        } catch (IOException e) {
-            logger.error("Ошибка при попытке получить HTML с помощью JSoup", e);
-        }
-
-        return doc;
-    }
-
-
+    /**
+     * Метод создаёт, заполняет и возвращает экземпляр Page. Под заполнением подразумевается получение
+     * статуса страницы, её содержимого, пути из переданного url и указание Site к которому принадлежит
+     * данная страница
+     * @param url Ссылка на страницу
+     * @param siteRepository JPA-репозиторий объекта Site
+     * @return Page - Объект страницы
+     */
     public static Page getPageEntity(@NonNull URL url, @NonNull SiteRepository siteRepository) {
 
-        String baseUrl = getBaseUrl(url);
-        String path = getUrlPath(baseUrl, url);
+        String baseUrl = URLParser.getBaseUrl(url);
+        String path = URLParser.getPathFromUrl(baseUrl, url);
         Page page = new Page();
+        AtomicReference<String> html = new AtomicReference<>("");
 
         try (CloseableHttpClient httpclient = HttpClients.createDefault()) {
             ClassicHttpRequest httpGet = ClassicRequestBuilder.get(url.toString()).build();
@@ -54,14 +51,17 @@ public class HTMLManager {
             httpGet.addHeader("Referer", "http://www.google.com");
 
             httpclient.execute(httpGet, response -> {
+                html.set(EntityUtils.toString(response.getEntity()));
                 page.setCode(response.getCode());
                 page.setPath(path);
-                page.setContent(EntityUtils.toString(response.getEntity()));
+                page.setContent(html.get());
                 page.setSiteId(siteRepository.findByUrl(baseUrl));
                 return null;
             });
 
+
         } catch (IOException e) {
+            LOGGER.error("Ошибка при попытке собрать сущность Page", e);
             throw new RuntimeException(e);
         }
 
@@ -69,10 +69,17 @@ public class HTMLManager {
     }
 
 
-    public static Set<String> getPagePaths(@NonNull URL url) {
-        String baseUrl = getBaseUrl(url);
+    /**
+     * Метод принимает ссылку, через которую делает обход по всей странице и возвращает список
+     * найденных уникальных внутренних ссылок. Все ссылки добавляются в нижнем регистре.
+     * @param page Сущность страницы, содержащая html-страницу
+     * @return Set ссылок найденных на странице
+     */
+    public static Set<String> getPagePaths(@NonNull Page page) {
+
+        String baseUrl = page.getSiteId().getUrl();
         Set<String> foundedPageLinks = new HashSet<>();
-        Document doc = getHTMLDocument(url);
+        Document doc = Jsoup.parse(page.getContent());
         Elements links = doc.select("a");
 
         String regex = "(" + Pattern.quote(baseUrl) + ")?(/[^,.\\s\"]+)(\\.html|\\.htm)?";
@@ -90,58 +97,30 @@ public class HTMLManager {
                 href = href.substring(baseUrl.length());
             }
 
-            foundedPageLinks.add(href);
+            foundedPageLinks.add(href.toLowerCase());
         }
 
         return foundedPageLinks;
     }
 
 
-    public static String getBaseUrl(URL url) {
-        String protocol = url.getProtocol();
-        String authority = url.getAuthority();
-
-        if (protocol == null || authority == null) {
-            String errorMessage = "Передан URL без базовой части";
-            Exception e = new Exception(errorMessage);
-            logger.error(errorMessage, e);
-            try {
-                throw e;
-            } catch (Exception ex) {
-                throw new RuntimeException(ex);
-            }
-        }
-
-        return protocol + "://" + authority;
+    /**
+     * Метод, который принимает HTML-страницу и возвращает её содержимое без HTML-тегов.
+     * @param html Строка HTML-страницы содержащая HTML-теги
+     * @return Строка с содержимым страницы без HTML-тегов
+     */
+    public static String getTextFromHTML(@NonNull String html) {
+        Document doc = Jsoup.parse(html);
+        return getTextFromHTML(doc);
     }
 
 
-    public static String getUrlPath(String baseUrl, URL url) {
-        if (baseUrl.equals(url.toString())) {
-            return  "/";
-        }
-        else {
-            return url.toString().substring(baseUrl.length());
-        }
-    }
-
-
-    public static URL mapStringToUrl(String s) {
-        try {
-            return new URL(s);
-        } catch (MalformedURLException e) {
-            logger.error("Передан URL в неверном формате", e);
-            throw new RuntimeException(e);
-        }
-    }
-
-
-    public static URL concatBaseUrlWithPath(String baseUrl, String path) {
-        try {
-            return new URL(baseUrl + path);
-        } catch (MalformedURLException e) {
-            logger.error("Ошибка при попытке конкатенации базовой части URL и его Path", e);
-            throw new RuntimeException(e);
-        }
+    /**
+     * Метод, который принимает HTML-страницу и возвращает её содержимое без HTML-тегов.
+     * @param doc Document JSoup
+     * @return Строка с содержимым страницы без HTML-тегов
+     */
+    public static String getTextFromHTML(@NonNull Document doc) {
+        return doc.text();
     }
 }

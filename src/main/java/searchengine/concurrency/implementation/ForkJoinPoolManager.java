@@ -1,26 +1,21 @@
-package searchengine.services.concurrency;
+package searchengine.concurrency.implementation;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import searchengine.concurrency.ApplicationConcurrency;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ForkJoinPool;
 
 @Component
-public class ForkJoinPoolManager {
-
-    protected static final Logger logger = LoggerFactory.getLogger(ForkJoinPoolManager.class);
-    private final ForkJoinPool forkJoinPool;
+public class ForkJoinPoolManager extends ApplicationConcurrency {
 
 
     // CONSTRUCTORS //
 
 
     public ForkJoinPoolManager() {
-        forkJoinPool = new ForkJoinPool();
+        forkJoinPool = getNewForkJoinPool();
     }
 
 
@@ -57,17 +52,7 @@ public class ForkJoinPoolManager {
         try {
             latch.await();
         } catch (InterruptedException e) {
-            logger.error("Ошибка при попытке дождаться завершения потока: {}", e.getMessage(), e);
-        }
-    }
-
-
-    public static void executeDelay(int millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            logger.error("Поток прерван во время выполнения задержки", e);
-            throw new RuntimeException(e);
+            LOGGER.error("Ошибка при попытке дождаться завершения потока: {}", e.getMessage(), e);
         }
     }
 }

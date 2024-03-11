@@ -8,10 +8,15 @@ import searchengine.config.SiteProps;
 import searchengine.config.SitesList;
 import searchengine.dto.indexing.IndexingErrorResponse;
 import searchengine.dto.indexing.IndexingResponse;
+import searchengine.dto.indexing.UrlDto;
 import searchengine.model.implementation.IndexStatus;
+import searchengine.model.implementation.Page;
 import searchengine.model.implementation.Site;
 import searchengine.repository.RepositoryManager;
-import searchengine.services.concurrency.ForkJoinPoolManager;
+import searchengine.concurrency.implementation.ForkJoinPoolManager;
+import searchengine.services.utils.URLParser;
+import searchengine.services.web.html.HTMLManager;
+import searchengine.services.web.html.Lemmatizator;
 import searchengine.services.web.scraping.ContentExtractorAction;
 
 import java.time.LocalDateTime;
@@ -25,6 +30,7 @@ public class IndexingService extends DefaultService {
 
     private final SitesList sitesList;
     private final ForkJoinPoolManager forkJoinPoolManager;
+    private final Lemmatizator lemmatizator;
     private boolean isIndexing = false;
 
 
@@ -33,10 +39,11 @@ public class IndexingService extends DefaultService {
 
     @Autowired
     public IndexingService(SitesList sitesList, RepositoryManager repositoryManager,
-                           ForkJoinPoolManager forkJoinPoolManager) {
+                           ForkJoinPoolManager forkJoinPoolManager, Lemmatizator lemmatizator) {
         super(repositoryManager);
         this.sitesList = sitesList;
         this.forkJoinPoolManager = forkJoinPoolManager;
+        this.lemmatizator = lemmatizator;
     }
 
 
@@ -97,11 +104,12 @@ public class IndexingService extends DefaultService {
     }
 
 
-    public ResponseEntity<IndexingResponse> indexPage(String url) {
+    public ResponseEntity<IndexingResponse> indexPage(UrlDto urlDto) {
+        String url = urlDto.getUrl();
         logger.info("Вызвана индексация отдельной страницы: {}", url);
 
         Site siteEntity = getSiteEntityFromUrl(url);
-
+        System.out.println("siteEntity: " + siteEntity);
         if (siteEntity == null) {
             String errorMessage = "Данная страница находится за пределами сайтов, указанных в конфигурационном файле";
             return getFailedResponse(new IndexingErrorResponse(errorMessage));
@@ -111,11 +119,14 @@ public class IndexingService extends DefaultService {
         siteEntity.setIndexStatus(IndexStatus.INDEXING);
         siteRepository.save(siteEntity);
 
-        ContentExtractorAction action = new ContentExtractorAction(repositoryManager, siteEntity.getUrl());
+        Page pageEntity = HTMLManager.getPageEntity(URLParser.mapStringToUrl(url), siteRepository);
 
-        if (hasErrorsDuringInvocation(action, siteEntity)) {
-            return getFailedResponse(new IndexingErrorResponse("Ошибка во время индексации страницы сайта"));
+        synchronized (this) {
+            pageRepository.save(pageEntity);
+            siteRepository.updateStatusTimeById(pageEntity.getId(), LocalDateTime.now());
         }
+
+        lemmatizator.save(HTMLManager.getTextFromHTML(pageEntity.getContent()), URLParser.mapStringToUrl(url));
 
         siteEntity.setIndexStatus(IndexStatus.INDEXED);
         siteRepository.save(siteEntity);
@@ -142,7 +153,7 @@ public class IndexingService extends DefaultService {
         Site siteEntity = null;
 
         for (SiteProps site : sitesList.getSites()) {
-            if (url.contains(site.getUrl())) {
+            if (url.startsWith(site.getUrl())) {
                 siteEntity = siteRepository.findByUrl(site.getUrl());
             }
         }

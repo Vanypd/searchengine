@@ -1,16 +1,20 @@
 package searchengine.services.web.scraping;
 
+import org.springframework.http.HttpStatus;
+import searchengine.concurrency.implementation.ThreadPoolManager;
 import searchengine.model.implementation.Page;
 import searchengine.repository.RepositoryManager;
 import searchengine.repository.implementation.PageRepository;
 import searchengine.repository.implementation.SiteRepository;
-import searchengine.services.concurrency.ForkJoinPoolManager;
+import searchengine.services.utils.URLParser;
 import searchengine.services.web.html.HTMLManager;
 
 import java.net.URL;
 import java.time.LocalDateTime;
-import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RecursiveAction;
 
 public class ContentExtractorAction extends RecursiveAction {
@@ -21,9 +25,10 @@ public class ContentExtractorAction extends RecursiveAction {
     protected RepositoryManager repositoryManager;
     protected PageRepository pageRepository;
     protected SiteRepository siteRepository;
-    protected Set<String> setOfUrl;
+    protected ConcurrentHashMap<String, String> setOfUrl;
 
     private static volatile boolean isStopped = false;
+
 
     // CONSTRUCTORS //
 
@@ -32,9 +37,9 @@ public class ContentExtractorAction extends RecursiveAction {
         this.repositoryManager = repositoryManager;
         this.pageRepository = repositoryManager.getPageRepository();
         this.siteRepository = repositoryManager.getSiteRepository();
-        this.baseUrl = HTMLManager.mapStringToUrl(baseUrl);
+        this.baseUrl = URLParser.mapStringToUrl(baseUrl);
         this.path = "/";
-        setOfUrl = new HashSet<>();
+        setOfUrl = new ConcurrentHashMap<>();
     }
 
 
@@ -50,35 +55,48 @@ public class ContentExtractorAction extends RecursiveAction {
     @Override
     public void compute() {
 
-        URL url = HTMLManager.concatBaseUrlWithPath(baseUrl.toString(), path);
-        Set<String> paths = HTMLManager.getPagePaths(url);
+        if (isStopped) {
+            return;
+        }
+
+        List<ContentExtractorAction> taskList = new ArrayList<>();
+
+        URL url = URLParser.concatBaseUrlWithPath(baseUrl.toString(), path);
         Page pageEntity = HTMLManager.getPageEntity(url, siteRepository);
 
+        repositoryManager.executeTransaction(() -> {
+            pageRepository.save(pageEntity);
+            siteRepository.updateStatusTimeById(pageEntity.getId(), LocalDateTime.now());
+        });
+
+        HttpStatus pageStatus = HttpStatus.valueOf(pageEntity.getCode());
+
+        if (pageStatus.is4xxClientError()) {
+            return;
+        }
+
+        Set<String> paths = HTMLManager.getPagePaths(pageEntity);
+
         for (String path : paths) {
-
-            if (isStopped) {
-                System.out.println("Подзадача завершается из-за остановки... ");
-                return;
-            }
-
-            if (setOfUrl.contains(path)) {
+            
+            if (setOfUrl.containsKey(path)) {
                 continue;
+            } else {
+                setOfUrl.put(path, path);
             }
 
-            setOfUrl.add(path);
-
-            synchronized (this) {
-                pageRepository.save(pageEntity);
-                siteRepository.updateStatusTimeById(pageEntity.getId(), LocalDateTime.now());
-            }
-
-            ForkJoinPoolManager.executeDelay(200);
+            ThreadPoolManager.executeDelay(200);
             ContentExtractorAction task = new ContentExtractorAction(baseUrl, path);
             task.repositoryManager = this.repositoryManager;
             task.pageRepository = this.pageRepository;
             task.siteRepository = this.siteRepository;
             task.setOfUrl = this.setOfUrl;
+            taskList.add(task);
+        }
+
+        for (ContentExtractorAction task : taskList) {
             task.fork();
+            task.invoke();
         }
     }
 
@@ -86,5 +104,10 @@ public class ContentExtractorAction extends RecursiveAction {
     public static void stop() {
         System.out.println("Вызвана остановка");
         isStopped = true;
+    }
+
+
+    public static boolean isStopped() {
+        return isStopped;
     }
 }
