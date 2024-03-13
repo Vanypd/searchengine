@@ -8,7 +8,7 @@ import searchengine.model.DefaultModel;
 @Getter
 @Setter
 @Entity
-@Table(name = "index")
+@Table(name = "`index`")
 public class Index extends DefaultModel {
 
     @ManyToOne
@@ -19,6 +19,6 @@ public class Index extends DefaultModel {
     @JoinColumn(name = "lemma_id", nullable = false)
     private Lemma lemmaId;
 
-    @Column(name = "rank_value", columnDefinition = "FLOAT", nullable = false)
+    @Column(name = "`rank`", columnDefinition = "FLOAT", nullable = false)
     private Float rank;
 }

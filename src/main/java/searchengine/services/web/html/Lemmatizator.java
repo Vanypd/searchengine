@@ -3,6 +3,8 @@ package searchengine.services.web.html;
 import lombok.NonNull;
 import org.apache.lucene.morphology.LuceneMorphology;
 import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import searchengine.model.implementation.Index;
@@ -25,6 +27,7 @@ import java.util.List;
 @Component
 public class Lemmatizator {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(Lemmatizator.class);
     private static final String[] functionalPartsOfSpeech = new String[]{"СОЮЗ", "ПРЕДЛ", "МЕЖД", "ЧАСТ"};
     private final RepositoryManager repositoryManager;
     private final SiteRepository siteRepository;
@@ -48,43 +51,35 @@ public class Lemmatizator {
         String path = URLParser.getPathFromUrl(baseUrl, url);
         HashMap<String, Integer> lemmas = collectLemmas(text);
 
+        Site site = siteRepository.findByUrl(baseUrl);
+        Page page = pageRepository.findBySiteIdAndPath(site, path);
+        checkIndexExistence(page);
+
         lemmas.forEach((str, count) -> {
             Lemma lemma = lemmaRepository.findByLemma(str);
-            Site site = siteRepository.findByUrl(baseUrl);
-            Page page = pageRepository.findByPath(path);
 
             if (lemma == null) {
-                Lemma lemmaEntity = new Lemma();
-                lemmaEntity.setSiteId(site);
-                lemmaEntity.setLemma(str);
-                lemmaEntity.setFrequency(1L);
-
-                repositoryManager.executeTransaction(() ->
-                    lemmaRepository.save(lemmaEntity)
-                );
-
-                Index index = new Index();
-                index.setPageId(page);
-                index.setLemmaId(lemmaEntity);
-                index.setRank(count.floatValue());
-
-                repositoryManager.executeTransaction(() ->
-                    indexRepository.save(index)
-                );
+                Lemma lemmaEntity = createNewLemmaEntity(site, str);
+                createNewIndexEntity(page, lemmaEntity, count);
             }
             else {
-                lemma.setFrequency(lemma.getFrequency() + 1);
-
-                repositoryManager.executeTransaction(() ->
-                    lemmaRepository.save(lemma)
-                );
-
                 Index index = indexRepository.findByPageIdAndLemmaId(page, lemma);
+
+                if (index == null) {
+                    String errorMessage = "index == null, в базе данных содержится lemma без индекса";
+                    Exception e = new NullPointerException(errorMessage);
+                    LOGGER.error(errorMessage, e);
+                    return;
+                    // TODO: Связать таблицу
+                }
+
+                lemma.setFrequency(lemma.getFrequency() + 1);
                 index.setRank(index.getRank() + count);
 
-                repositoryManager.executeTransaction(() ->
-                    indexRepository.save(index)
-                );
+                repositoryManager.executeTransaction(() -> {
+                    lemmaRepository.save(lemma);
+                    indexRepository.save(index);
+                });
             }
         });
     }
@@ -163,6 +158,50 @@ public class Lemmatizator {
             return new RussianLuceneMorphology();
         } catch (IOException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+
+    private Lemma createNewLemmaEntity(Site site, String str) {
+        Lemma lemmaEntity = new Lemma();
+        lemmaEntity.setSiteId(site);
+        lemmaEntity.setLemma(str);
+        lemmaEntity.setFrequency(1L);
+
+        repositoryManager.executeTransaction(() ->
+                lemmaRepository.save(lemmaEntity)
+        );
+
+        return lemmaEntity;
+    }
+
+
+    private void createNewIndexEntity(Page page, Lemma lemmaEntity, Integer count) {
+        Index indexEntity = new Index();
+        indexEntity.setPageId(page);
+        indexEntity.setLemmaId(lemmaEntity);
+        indexEntity.setRank(count.floatValue());
+
+        repositoryManager.executeTransaction(() ->
+                indexRepository.save(indexEntity)
+        );
+    }
+
+
+    private void checkIndexExistence(Page page) {
+        List<Index> indexList = indexRepository.findAllByPageId(page);
+
+        if (!indexList.isEmpty()) {
+            indexRepository.deleteAll(indexList);
+
+            for (Index index : indexList) {
+                Lemma lemma = index.getLemmaId();
+                lemma.setFrequency(lemma.getFrequency() - 1);
+
+                if (lemma.getFrequency() == 0) {
+                    lemmaRepository.delete(lemma);
+                }
+            }
         }
     }
 }

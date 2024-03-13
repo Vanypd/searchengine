@@ -23,6 +23,6 @@ public class RepositoryManager {
 
     @Transactional
     public void executeTransaction(Runnable task) {
-        threadPoolManager.execute(task);
+        task.run();
     }
 }

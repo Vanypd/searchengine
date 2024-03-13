@@ -55,13 +55,22 @@ public class URLParser {
             throw e;
         }
 
-
         if (baseUrl.equals(url.toString())) {
             return  "/";
         }
         else {
             return url.toString().substring(baseUrl.length());
         }
+    }
+
+    /**
+     * Метод принимает ссылку, а затем возвращает путь
+     * @param url Ссылка из которой извлекается путь, например "https://example.com/path"
+     * @return String - Строка пути
+     */
+    @SuppressWarnings("JavadocLinkAsPlainText")
+    public static String getPathFromUrl(@NonNull URL url) {
+        return getPathFromUrl(getBaseUrl(url), url);
     }
 
 

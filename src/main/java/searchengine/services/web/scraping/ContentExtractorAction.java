@@ -59,10 +59,9 @@ public class ContentExtractorAction extends RecursiveAction {
             return;
         }
 
-        List<ContentExtractorAction> taskList = new ArrayList<>();
-
         URL url = URLParser.concatBaseUrlWithPath(baseUrl.toString(), path);
         Page pageEntity = HTMLManager.getPageEntity(url, siteRepository);
+        List<ContentExtractorAction> taskList = new ArrayList<>();
 
         repositoryManager.executeTransaction(() -> {
             pageRepository.save(pageEntity);
@@ -78,8 +77,8 @@ public class ContentExtractorAction extends RecursiveAction {
         Set<String> paths = HTMLManager.getPagePaths(pageEntity);
 
         for (String path : paths) {
-            
-            if (setOfUrl.containsKey(path)) {
+
+            if (path.equals(this.path) || setOfUrl.containsKey(path)) {
                 continue;
             } else {
                 setOfUrl.put(path, path);
@@ -91,18 +90,17 @@ public class ContentExtractorAction extends RecursiveAction {
             task.pageRepository = this.pageRepository;
             task.siteRepository = this.siteRepository;
             task.setOfUrl = this.setOfUrl;
+            task.fork();
             taskList.add(task);
         }
 
         for (ContentExtractorAction task : taskList) {
-            task.fork();
-            task.invoke();
+            task.join();
         }
     }
 
 
     public static void stop() {
-        System.out.println("Вызвана остановка");
         isStopped = true;
     }
 
