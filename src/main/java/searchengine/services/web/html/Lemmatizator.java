@@ -20,7 +20,6 @@ import searchengine.services.utils.URLParser;
 
 import java.io.IOException;
 import java.net.URL;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 
@@ -53,34 +52,25 @@ public class Lemmatizator {
 
         Site site = siteRepository.findByUrl(baseUrl);
         Page page = pageRepository.findBySiteIdAndPath(site, path);
-        checkIndexExistence(page);
+
+        repositoryManager.executeTransaction(() ->
+            checkIndexExistence(page)
+        );
 
         lemmas.forEach((str, count) -> {
-            Lemma lemma = lemmaRepository.findByLemma(str);
+            Lemma lemmaEntity = lemmaRepository.findByLemma(str);
+            Index indexEntity;
 
-            if (lemma == null) {
-                Lemma lemmaEntity = createNewLemmaEntity(site, str);
-                createNewIndexEntity(page, lemmaEntity, count);
+            if (lemmaEntity == null) {
+                lemmaEntity = createNewLemmaEntity(site, str);
+                indexEntity = createNewIndexEntity(page, lemmaEntity, count);
+            } else {
+                indexEntity = indexRepository.findByPageIdAndLemmaId(page, lemmaEntity);
+                lemmaEntity.setFrequency(lemmaEntity.getFrequency() + 1);
+                indexEntity.setRank(indexEntity.getRank() + count);
             }
-            else {
-                Index index = indexRepository.findByPageIdAndLemmaId(page, lemma);
 
-                if (index == null) {
-                    String errorMessage = "index == null, в базе данных содержится lemma без индекса";
-                    Exception e = new NullPointerException(errorMessage);
-                    LOGGER.error(errorMessage, e);
-                    return;
-                    // TODO: Связать таблицу
-                }
-
-                lemma.setFrequency(lemma.getFrequency() + 1);
-                index.setRank(index.getRank() + count);
-
-                repositoryManager.executeTransaction(() -> {
-                    lemmaRepository.save(lemma);
-                    indexRepository.save(index);
-                });
-            }
+            saveLemmaAndIndex(lemmaEntity, indexEntity);
         });
     }
 
@@ -93,9 +83,7 @@ public class Lemmatizator {
 
         HashMap<String, Integer> result = new HashMap<>();
         LuceneMorphology luceneMorph = luceneMorphInitialization();
-
         String[] words = splitTextToWords(text);
-        System.out.println(Arrays.toString(words));
 
         for (String word : words) {
 
@@ -134,6 +122,13 @@ public class Lemmatizator {
     // UTILS METHODS //
 
 
+    /**
+     * Метод проверяет является ли переданное в параметры слово служебной частью речи и возвращает
+     * соответствующий boolean
+     * @param wordWithProps Строка содержащая слово с его свойствами, например
+     *                      "хитрый|Y КР_ПРИЛ ср,ед,од,но"
+     * @return boolean
+     */
     private static boolean isFunctionalPartOfSpeech(String wordWithProps) {
         for (String part : functionalPartsOfSpeech) {
             if (wordWithProps.contains(part)) {
@@ -144,6 +139,13 @@ public class Lemmatizator {
     }
 
 
+    /**
+     * Метод принимает текст, переводит его в нижний регистр, а также удаляет все символы, которые не
+     * являются символами русского алфавита или пробельным символом и заменяет все множественные пробельные
+     * символы на один пробел. Затем идёт разделение текста на слова и возвращается массив строк.
+     * @param text Текст, который необходимо разделить по словам
+     * @return String[] - Массив строк
+     */
     private static String[] splitTextToWords(String text) {
         return text.trim()
                 .toLowerCase()
@@ -153,41 +155,56 @@ public class Lemmatizator {
     }
 
 
+    /**
+     * Метод инициализирует новый LuceneMorphology и возвращает его.
+     * @return LuceneMorphology
+     */
     private static LuceneMorphology luceneMorphInitialization() {
         try {
             return new RussianLuceneMorphology();
         } catch (IOException e) {
+            LOGGER.error("Не удалось инициализировать RussianLuceneMorphology", e);
             throw new RuntimeException(e);
         }
     }
 
-
+    /**
+     * Метод создаёт и возвращает новую сущность Lemma.
+     * @param site Сущность сайта
+     * @param str Строка с леммой
+     * @return Lemma
+     */
     private Lemma createNewLemmaEntity(Site site, String str) {
         Lemma lemmaEntity = new Lemma();
         lemmaEntity.setSiteId(site);
         lemmaEntity.setLemma(str);
         lemmaEntity.setFrequency(1L);
-
-        repositoryManager.executeTransaction(() ->
-                lemmaRepository.save(lemmaEntity)
-        );
-
         return lemmaEntity;
     }
 
 
-    private void createNewIndexEntity(Page page, Lemma lemmaEntity, Integer count) {
+    /**
+     * Метод создаёт и возвращает новую сущность Index.
+     * @param page Сущность страницы
+     * @param lemmaEntity Сущность леммы
+     * @param count Количество повторений леммы на странице
+     * @return Index
+     */
+    private Index createNewIndexEntity(Page page, Lemma lemmaEntity, Integer count) {
         Index indexEntity = new Index();
         indexEntity.setPageId(page);
         indexEntity.setLemmaId(lemmaEntity);
         indexEntity.setRank(count.floatValue());
-
-        repositoryManager.executeTransaction(() ->
-                indexRepository.save(indexEntity)
-        );
+        return indexEntity;
     }
 
 
+    /**
+     * Метод проверяет, существует ли индексы у переданной в параметры страницы, если индексы существуют
+     * то из базы данных удаляются все индексы связанные с этой страницы, а так же обновляются/удаляются
+     * связанные леммы.
+     * @param page Сущность страницы
+     */
     private void checkIndexExistence(Page page) {
         List<Index> indexList = indexRepository.findAllByPageId(page);
 
@@ -203,6 +220,19 @@ public class Lemmatizator {
                 }
             }
         }
+    }
+
+
+    /**
+     *  Метод сохраняет Лемму и Индекс в базу данных в рамках одной транзакции.
+     * @param lemma Сущность леммы которую необходимо сохранить
+     * @param index Сущность индекса которую необходимо сохранить
+     */
+    private void saveLemmaAndIndex(Lemma lemma, Index index) {
+        repositoryManager.executeTransaction(() -> {
+            lemmaRepository.save(lemma);
+            indexRepository.save(index);
+        });
     }
 }
 
