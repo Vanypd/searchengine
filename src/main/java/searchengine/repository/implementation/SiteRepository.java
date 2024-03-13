@@ -3,12 +3,14 @@ package searchengine.repository.implementation;
 import jakarta.transaction.Transactional;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.stereotype.Repository;
 import searchengine.model.implementation.IndexStatus;
 import searchengine.model.implementation.Site;
 import searchengine.repository.GenericRepository;
 
 import java.time.LocalDateTime;
 
+@Repository
 public interface SiteRepository extends GenericRepository<Site> {
     Site findByUrl(String url);
 

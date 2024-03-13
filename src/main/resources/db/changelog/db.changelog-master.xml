@@ -110,7 +110,7 @@
                 <constraints nullable="false"/>
             </column>
 
-            <column name="site_id" type="INT">
+            <column name="lemma_id" type="INT">
                 <constraints nullable="false"/>
             </column>
 
@@ -123,9 +123,9 @@
     <changeSet id="add_foreign_key_index_site" author="Spring_Senior">
         <addForeignKeyConstraint
                 baseTableName="index"
-                baseColumnNames="site_id"
-                constraintName="fk_index_site"
-                referencedTableName="site"
+                baseColumnNames="lemma_id"
+                constraintName="fk_index_lemma"
+                referencedTableName="lemma"
                 referencedColumnNames="id"
                 onDelete="CASCADE"
                 onUpdate="CASCADE"/>

@@ -8,12 +8,18 @@ import searchengine.config.SiteProps;
 import searchengine.config.SitesList;
 import searchengine.dto.indexing.IndexingErrorResponse;
 import searchengine.dto.indexing.IndexingResponse;
+import searchengine.dto.indexing.UrlDto;
 import searchengine.model.implementation.IndexStatus;
+import searchengine.model.implementation.Page;
 import searchengine.model.implementation.Site;
 import searchengine.repository.RepositoryManager;
-import searchengine.services.concurrency.ForkJoinPoolManager;
+import searchengine.concurrency.implementation.ForkJoinPoolManager;
+import searchengine.services.utils.URLParser;
+import searchengine.services.web.html.HTMLManager;
+import searchengine.services.web.html.Lemmatizator;
 import searchengine.services.web.scraping.ContentExtractorAction;
 
+import java.net.URL;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,6 +31,7 @@ public class IndexingService extends DefaultService {
 
     private final SitesList sitesList;
     private final ForkJoinPoolManager forkJoinPoolManager;
+    private final Lemmatizator lemmatizator;
     private boolean isIndexing = false;
 
 
@@ -33,10 +40,11 @@ public class IndexingService extends DefaultService {
 
     @Autowired
     public IndexingService(SitesList sitesList, RepositoryManager repositoryManager,
-                           ForkJoinPoolManager forkJoinPoolManager) {
+                           ForkJoinPoolManager forkJoinPoolManager, Lemmatizator lemmatizator) {
         super(repositoryManager);
         this.sitesList = sitesList;
         this.forkJoinPoolManager = forkJoinPoolManager;
+        this.lemmatizator = lemmatizator;
     }
 
 
@@ -67,7 +75,9 @@ public class IndexingService extends DefaultService {
             }
 
             siteEntity.setIndexStatus(IndexStatus.INDEXED);
-            siteRepository.save(siteEntity);
+            repositoryManager.executeTransaction(() ->
+                siteRepository.save(siteEntity)
+            );
         }));
 
         forkJoinPoolManager.executeAwait(tasks);
@@ -91,32 +101,47 @@ public class IndexingService extends DefaultService {
         }
 
         ContentExtractorAction.stop();
-        siteRepository.updateStatusAndErrorByStatus(IndexStatus.INDEXING, IndexStatus.FAILED,
-                "Индексация остановлена пользователем");
+
+        repositoryManager.executeTransaction(() -> {
+            String errorMessage = "Индексация остановлена пользователем";
+            siteRepository.updateStatusAndErrorByStatus(IndexStatus.INDEXING, IndexStatus.FAILED, errorMessage);
+        });
+
         return getSuccessResponse(new IndexingResponse(true));
     }
 
 
-    public ResponseEntity<IndexingResponse> indexPage(String url) {
-        logger.info("Вызвана индексация отдельной страницы: {}", url);
-
-        Site siteEntity = getSiteEntityFromUrl(url);
+    public ResponseEntity<IndexingResponse> indexPage(UrlDto urlDto) {
+        logger.info("Вызвана индексация отдельной страницы: {}", urlDto.getUrl());
+        Site siteEntity = getSiteEntityFromUrl(urlDto.getUrl());
 
         if (siteEntity == null) {
             String errorMessage = "Данная страница находится за пределами сайтов, указанных в конфигурационном файле";
             return getFailedResponse(new IndexingErrorResponse(errorMessage));
         }
 
-
         siteEntity.setIndexStatus(IndexStatus.INDEXING);
         siteRepository.save(siteEntity);
 
-        ContentExtractorAction action = new ContentExtractorAction(repositoryManager, siteEntity.getUrl());
+        URL url = URLParser.mapStringToUrl(urlDto.getUrl());
+        String path = URLParser.getPathFromUrl(url);
+        Page pageEntity = pageRepository.findBySiteIdAndPath(siteEntity, path);
+        Page newPageEntity = HTMLManager.getPageEntity(url, siteRepository);
 
-        if (hasErrorsDuringInvocation(action, siteEntity)) {
-            return getFailedResponse(new IndexingErrorResponse("Ошибка во время индексации страницы сайта"));
+        if (pageEntity != null) {
+            pageEntity.setContent(newPageEntity.getContent());
+            pageEntity.setCode(newPageEntity.getCode());
+        } else {
+            pageEntity = newPageEntity;
         }
 
+        Page finalPageEntity = pageEntity;
+        repositoryManager.executeTransaction(() -> {
+            pageRepository.save(finalPageEntity);
+            siteRepository.updateStatusTimeById(finalPageEntity.getId(), LocalDateTime.now());
+        });
+
+        lemmatizator.save(HTMLManager.getTextFromHTML(pageEntity.getContent()), url);
         siteEntity.setIndexStatus(IndexStatus.INDEXED);
         siteRepository.save(siteEntity);
         return getSuccessResponse(new IndexingResponse(true));
@@ -142,8 +167,19 @@ public class IndexingService extends DefaultService {
         Site siteEntity = null;
 
         for (SiteProps site : sitesList.getSites()) {
-            if (url.contains(site.getUrl())) {
-                siteEntity = siteRepository.findByUrl(site.getUrl());
+
+            if (url.startsWith(site.getUrl())) {
+                Site foundedSite = siteRepository.findByUrl(site.getUrl());
+
+                if (foundedSite == null) {
+                    Site finalFoundedSite = mapSiteEntityFromSiteList(site);
+                    repositoryManager.executeTransaction(() ->
+                        siteRepository.save(finalFoundedSite)
+                    );
+                    foundedSite = finalFoundedSite;
+                }
+
+                siteEntity = foundedSite;
             }
         }
 
