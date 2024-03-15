@@ -8,16 +8,14 @@ import searchengine.dto.statistics.DetailedStatisticsItem;
 import searchengine.dto.statistics.StatisticsData;
 import searchengine.dto.statistics.StatisticsResponse;
 import searchengine.dto.statistics.TotalStatistics;
+import searchengine.model.implementation.Site;
 import searchengine.repository.RepositoryManager;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 
 @Service
 public class StatisticsService extends DefaultService {
-
-    private final Random random = new Random();
     private final SitesList sites;
 
     public StatisticsService(RepositoryManager repositoryManager, SitesList sites) {
@@ -27,32 +25,45 @@ public class StatisticsService extends DefaultService {
 
 
     public ResponseEntity<StatisticsResponse> getStatistics() {
-        String[] statuses = { "INDEXED", "FAILED", "INDEXING" };
-        String[] errors = {
-                "Ошибка индексации: главная страница сайта не доступна",
-                "Ошибка индексации: сайт не доступен",
-                ""
-        };
-
         TotalStatistics total = new TotalStatistics();
         total.setSites(sites.getSites().size());
         total.setIndexing(true);
 
         List<DetailedStatisticsItem> detailed = new ArrayList<>();
         List<SiteProps> sitesList = sites.getSites();
-        for(int i = 0; i < sitesList.size(); i++) {
-            SiteProps site = sitesList.get(i);
+
+        for (SiteProps siteProps : sitesList) {
+            Site siteEntity = siteRepository.findByUrl(siteProps.getUrl());
             DetailedStatisticsItem item = new DetailedStatisticsItem();
-            item.setName(site.getName());
-            item.setUrl(site.getUrl());
-            int pages = random.nextInt(1_000);
-            int lemmas = pages * random.nextInt(1_000);
+            int pages;
+            int lemmas;
+            String status;
+            String error;
+            long statusTime;
+
+            if (!(siteEntity == null)) {
+                pages = (int) pageRepository.countPagesBySiteUrl(siteProps.getUrl());
+                lemmas = (int) lemmaRepository.countLemmasBySiteUrl(siteProps.getUrl());
+                status = siteEntity.getIndexStatus().name();
+                error = siteEntity.getLastError();
+                statusTime = siteEntity.getStatusTime().toInstant(java.time.ZoneOffset.UTC).toEpochMilli();
+
+            } else {
+                pages = 0;
+                lemmas = 0;
+                status = "NOT INDEXED";
+                error = "Ошибка индексации: сайт не проиндексирован";
+                statusTime = System.currentTimeMillis();
+            }
+
             item.setPages(pages);
             item.setLemmas(lemmas);
-            item.setStatus(statuses[i % 3]);
-            item.setError(errors[i % 3]);
-            item.setStatusTime(System.currentTimeMillis() -
-                    (random.nextInt(10_000)));
+            item.setName(siteProps.getName());
+            item.setUrl(siteProps.getUrl());
+            item.setStatus(status);
+            item.setError(error);
+            item.setStatusTime(statusTime);
+
             total.setPages(total.getPages() + pages);
             total.setLemmas(total.getLemmas() + lemmas);
             detailed.add(item);

@@ -8,6 +8,7 @@ import searchengine.repository.implementation.PageRepository;
 import searchengine.repository.implementation.SiteRepository;
 import searchengine.services.utils.URLParser;
 import searchengine.services.web.html.HTMLManager;
+import searchengine.services.web.html.Lemmatizator;
 
 import java.net.URL;
 import java.time.LocalDateTime;
@@ -23,6 +24,7 @@ public class ContentExtractorAction extends RecursiveAction {
     private final String path;
 
     protected RepositoryManager repositoryManager;
+    protected Lemmatizator lemmatizator;
     protected PageRepository pageRepository;
     protected SiteRepository siteRepository;
     protected ConcurrentHashMap<String, String> setOfUrl;
@@ -33,8 +35,9 @@ public class ContentExtractorAction extends RecursiveAction {
     // CONSTRUCTORS //
 
 
-    public ContentExtractorAction(RepositoryManager repositoryManager, String baseUrl) {
+    public ContentExtractorAction(RepositoryManager repositoryManager, String baseUrl, Lemmatizator lemmatizator) {
         this.repositoryManager = repositoryManager;
+        this.lemmatizator = lemmatizator;
         this.pageRepository = repositoryManager.getPageRepository();
         this.siteRepository = repositoryManager.getSiteRepository();
         this.baseUrl = URLParser.mapStringToUrl(baseUrl);
@@ -68,6 +71,7 @@ public class ContentExtractorAction extends RecursiveAction {
             siteRepository.updateStatusTimeById(pageEntity.getId(), LocalDateTime.now());
         });
 
+        lemmatizator.save(pageEntity);
         HttpStatus pageStatus = HttpStatus.valueOf(pageEntity.getCode());
 
         if (pageStatus.is4xxClientError()) {
@@ -87,6 +91,7 @@ public class ContentExtractorAction extends RecursiveAction {
             ThreadPoolManager.executeDelay(200);
             ContentExtractorAction task = new ContentExtractorAction(baseUrl, path);
             task.repositoryManager = this.repositoryManager;
+            task.lemmatizator = this.lemmatizator;
             task.pageRepository = this.pageRepository;
             task.siteRepository = this.siteRepository;
             task.setOfUrl = this.setOfUrl;

@@ -1,6 +1,5 @@
 package searchengine.services.web.html;
 
-import lombok.NonNull;
 import org.apache.lucene.morphology.LuceneMorphology;
 import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
 import org.slf4j.Logger;
@@ -14,12 +13,8 @@ import searchengine.model.implementation.Site;
 import searchengine.repository.RepositoryManager;
 import searchengine.repository.implementation.IndexRepository;
 import searchengine.repository.implementation.LemmaRepository;
-import searchengine.repository.implementation.PageRepository;
-import searchengine.repository.implementation.SiteRepository;
-import searchengine.services.utils.URLParser;
 
 import java.io.IOException;
-import java.net.URL;
 import java.util.HashMap;
 import java.util.List;
 
@@ -29,8 +24,6 @@ public class Lemmatizator {
     private static final Logger LOGGER = LoggerFactory.getLogger(Lemmatizator.class);
     private static final String[] functionalPartsOfSpeech = new String[]{"СОЮЗ", "ПРЕДЛ", "МЕЖД", "ЧАСТ"};
     private final RepositoryManager repositoryManager;
-    private final SiteRepository siteRepository;
-    private final PageRepository pageRepository;
     private final LemmaRepository lemmaRepository;
     private final IndexRepository indexRepository;
 
@@ -38,44 +31,48 @@ public class Lemmatizator {
     @Autowired
     public Lemmatizator(RepositoryManager repositoryManager) {
         this.repositoryManager = repositoryManager;
-        siteRepository = repositoryManager.getSiteRepository();
-        pageRepository = repositoryManager.getPageRepository();
         lemmaRepository = repositoryManager.getLemmaRepository();
         indexRepository = repositoryManager.getIndexRepository();
     }
 
 
-    public void save(@NonNull String text, URL url) {
-        String baseUrl = URLParser.getBaseUrl(url);
-        String path = URLParser.getPathFromUrl(baseUrl, url);
+    public void save(Page pageEntity) {
+        Site siteEntity = pageEntity.getSiteId();
+        String text = HTMLManager.getTextFromHTML(pageEntity.getContent());
         HashMap<String, Integer> lemmas = collectLemmas(text);
 
-        Site site = siteRepository.findByUrl(baseUrl);
-        Page page = pageRepository.findBySiteIdAndPath(site, path);
-
         repositoryManager.executeTransaction(() ->
-            checkIndexExistence(page)
+                checkIndexExistence(pageEntity)
         );
 
         lemmas.forEach((str, count) -> {
-            Lemma lemmaEntity = lemmaRepository.findByLemma(str);
+            Lemma lemmaEntity;
             Index indexEntity;
 
-            if (lemmaEntity == null) {
-                lemmaEntity = createNewLemmaEntity(site, str);
-                indexEntity = createNewIndexEntity(page, lemmaEntity, count);
-            } else {
-                indexEntity = indexRepository.findByPageIdAndLemmaId(page, lemmaEntity);
-                lemmaEntity.setFrequency(lemmaEntity.getFrequency() + 1);
-                indexEntity.setRank(indexEntity.getRank() + count);
-            }
+            if (lemmaRepository.existsByLemma(str)) {
+                lemmaEntity = lemmaRepository.findByLemma(str);
+                indexEntity = indexRepository.findByPageIdAndLemmaId(pageEntity, lemmaEntity);
 
-            saveLemmaAndIndex(lemmaEntity, indexEntity);
+                if (indexEntity == null) {
+                    createAndSaveNewIndex(pageEntity, lemmaEntity, count);
+                    return;
+                }
+
+                repositoryManager.executeTransaction(() -> {
+                    lemmaRepository.incrementFrequency(lemmaEntity.getId());
+                    indexRepository.incrementRank(indexEntity.getId(), count);
+                });
+
+            } else {
+                // TODO: Полностью убрать возможность создания дубликата леммы
+                lemmaEntity = createAndSaveNewLemma(siteEntity, str);
+                createAndSaveNewIndex(pageEntity, lemmaEntity, count);
+            }
         });
     }
 
 
-    private static HashMap<String, Integer> collectLemmas(String text) {
+    private HashMap<String, Integer> collectLemmas(String text) {
 
         if (text.isBlank()) {
             return new HashMap<>();
@@ -87,14 +84,7 @@ public class Lemmatizator {
 
         for (String word : words) {
 
-            if (word.isBlank()) {
-                continue;
-            }
-
-            List<String> wordBaseForms = luceneMorph.getMorphInfo(word);
-            String wordProps = wordBaseForms.get(0);
-
-            if (isFunctionalPartOfSpeech(wordProps)) {
+            if (word.isBlank() || isFunctionalPartOfSpeech(luceneMorph, word)) {
                 continue;
             }
 
@@ -125,14 +115,18 @@ public class Lemmatizator {
     /**
      * Метод проверяет является ли переданное в параметры слово служебной частью речи и возвращает
      * соответствующий boolean
-     * @param wordWithProps Строка содержащая слово с его свойствами, например
-     *                      "хитрый|Y КР_ПРИЛ ср,ед,од,но"
+     *
+     * @param luceneMorph LuceneMorphology
+     * @param word        Слово
      * @return boolean
      */
-    private static boolean isFunctionalPartOfSpeech(String wordWithProps) {
+    private static boolean isFunctionalPartOfSpeech(LuceneMorphology luceneMorph, String word) {
+        List<String> wordBaseForms = luceneMorph.getMorphInfo(word);
+        String wordProps = wordBaseForms.get(0);
+
         for (String part : functionalPartsOfSpeech) {
-            if (wordWithProps.contains(part)) {
-              return true;
+            if (wordProps.contains(part)) {
+                return true;
             }
         }
         return false;
@@ -143,6 +137,7 @@ public class Lemmatizator {
      * Метод принимает текст, переводит его в нижний регистр, а также удаляет все символы, которые не
      * являются символами русского алфавита или пробельным символом и заменяет все множественные пробельные
      * символы на один пробел. Затем идёт разделение текста на слова и возвращается массив строк.
+     *
      * @param text Текст, который необходимо разделить по словам
      * @return String[] - Массив строк
      */
@@ -157,6 +152,7 @@ public class Lemmatizator {
 
     /**
      * Метод инициализирует новый LuceneMorphology и возвращает его.
+     *
      * @return LuceneMorphology
      */
     private static LuceneMorphology luceneMorphInitialization() {
@@ -169,33 +165,44 @@ public class Lemmatizator {
     }
 
     /**
-     * Метод создаёт и возвращает новую сущность Lemma.
+     * Метод создаёт, сохраняет в базу данных в рамках одной транзакции и возвращает
+     * новую сущность Lemma.
+     *
      * @param site Сущность сайта
-     * @param str Строка с леммой
+     * @param str  Строка с леммой
      * @return Lemma
      */
-    private Lemma createNewLemmaEntity(Site site, String str) {
+    private Lemma createAndSaveNewLemma(Site site, String str) {
         Lemma lemmaEntity = new Lemma();
         lemmaEntity.setSiteId(site);
         lemmaEntity.setLemma(str);
         lemmaEntity.setFrequency(1L);
+
+        repositoryManager.executeTransaction(() ->
+                lemmaRepository.save(lemmaEntity)
+        );
+
         return lemmaEntity;
     }
 
 
     /**
-     * Метод создаёт и возвращает новую сущность Index.
-     * @param page Сущность страницы
+     * Метод создаёт и сохраняет в базу данных новую сущность Index в рамках одной транзакции.
+     *
+     * @param page        Сущность страницы
      * @param lemmaEntity Сущность леммы
-     * @param count Количество повторений леммы на странице
-     * @return Index
+     * @param count       Количество повторений леммы на странице
      */
-    private Index createNewIndexEntity(Page page, Lemma lemmaEntity, Integer count) {
+    private void createAndSaveNewIndex(Page page, Lemma lemmaEntity, Integer count) {
         Index indexEntity = new Index();
         indexEntity.setPageId(page);
         indexEntity.setLemmaId(lemmaEntity);
         indexEntity.setRank(count.floatValue());
-        return indexEntity;
+
+        repositoryManager.executeTransaction(() ->
+                indexRepository.save(indexEntity)
+        );
+
     }
 
 
@@ -203,6 +210,7 @@ public class Lemmatizator {
      * Метод проверяет, существует ли индексы у переданной в параметры страницы, если индексы существуют
      * то из базы данных удаляются все индексы связанные с этой страницы, а так же обновляются/удаляются
      * связанные леммы.
+     *
      * @param page Сущность страницы
      */
     private void checkIndexExistence(Page page) {
@@ -220,19 +228,6 @@ public class Lemmatizator {
                 }
             }
         }
-    }
-
-
-    /**
-     *  Метод сохраняет Лемму и Индекс в базу данных в рамках одной транзакции.
-     * @param lemma Сущность леммы которую необходимо сохранить
-     * @param index Сущность индекса которую необходимо сохранить
-     */
-    private void saveLemmaAndIndex(Lemma lemma, Index index) {
-        repositoryManager.executeTransaction(() -> {
-            lemmaRepository.save(lemma);
-            indexRepository.save(index);
-        });
     }
 }
 

@@ -52,7 +52,7 @@ public class IndexingService extends DefaultService {
 
 
     public ResponseEntity<IndexingResponse> startIndexing() {
-        logger.info("Вызван запуск полной индексации");
+        LOGGER.info("Вызван запуск полной индексации");
 
         if (isIndexing) {
             return getFailedResponse(new IndexingErrorResponse("Индексация уже запущена"));
@@ -61,13 +61,16 @@ public class IndexingService extends DefaultService {
         isIndexing = true;
         siteRepository.deleteAll();
         pageRepository.deleteAll();
+        lemmaRepository.deleteAll();
+        indexRepository.deleteAll();
 
         AtomicInteger errorsCount = new AtomicInteger();
         List<Runnable> tasks = new ArrayList<>();
 
         sitesList.getSites().forEach(site -> tasks.add(() -> {
             Site siteEntity = mapSiteEntityFromSiteList(site);
-            ContentExtractorAction action = new ContentExtractorAction(repositoryManager, siteEntity.getUrl());
+            ContentExtractorAction action =
+                    new ContentExtractorAction(repositoryManager, siteEntity.getUrl(), lemmatizator);
 
             if (hasErrorsDuringInvocation(action, siteEntity)) {
                 errorsCount.getAndIncrement();
@@ -94,7 +97,7 @@ public class IndexingService extends DefaultService {
 
 
     public ResponseEntity<IndexingResponse> stopIndexing() {
-        logger.info("Вызвана остановка индексации");
+        LOGGER.info("Вызвана остановка индексации");
 
         if (!isIndexing) {
             return getFailedResponse(new IndexingErrorResponse("Индексация не запущена"));
@@ -112,7 +115,7 @@ public class IndexingService extends DefaultService {
 
 
     public ResponseEntity<IndexingResponse> indexPage(UrlDto urlDto) {
-        logger.info("Вызвана индексация отдельной страницы: {}", urlDto.getUrl());
+        LOGGER.info("Вызвана индексация отдельной страницы: {}", urlDto.getUrl());
         Site siteEntity = getSiteEntityFromUrl(urlDto.getUrl());
 
         if (siteEntity == null) {
@@ -141,7 +144,7 @@ public class IndexingService extends DefaultService {
             siteRepository.updateStatusTimeById(finalPageEntity.getId(), LocalDateTime.now());
         });
 
-        lemmatizator.save(HTMLManager.getTextFromHTML(pageEntity.getContent()), url);
+        lemmatizator.save(pageEntity);
         siteEntity.setIndexStatus(IndexStatus.INDEXED);
         siteRepository.save(siteEntity);
         return getSuccessResponse(new IndexingResponse(true));
@@ -156,7 +159,7 @@ public class IndexingService extends DefaultService {
         siteEntity.setUrl(site.getUrl());
         siteEntity.setName(site.getName());
         siteEntity.setIndexStatus(IndexStatus.INDEXING);
-        siteEntity.setLastError(null);
+        siteEntity.setLastError("");
         siteEntity.setStatusTime(LocalDateTime.now());
         siteRepository.save(siteEntity);
         return siteEntity;
@@ -192,7 +195,7 @@ public class IndexingService extends DefaultService {
             action.invoke();
             return false;
         } catch (Exception e) {
-            logger.error("Ошибка во время индексации сайта {}: {}", siteEntity.getUrl(), e.getMessage(), e);
+            LOGGER.error("Ошибка во время индексации сайта {}: {}", siteEntity.getUrl(), e.getMessage(), e);
             siteEntity.setIndexStatus(IndexStatus.FAILED);
             return true;
         }
@@ -204,16 +207,6 @@ public class IndexingService extends DefaultService {
 
     private ResponseEntity<IndexingResponse> getSuccessResponse(IndexingResponse body) {
         return ResponseEntity.ok(body);
-    }
-
-
-    private ResponseEntity<IndexingResponse> getSuccessResponse(HttpStatus status) {
-        return ResponseEntity.status(status).build();
-    }
-
-
-    private ResponseEntity<IndexingResponse> getSuccessResponse(HttpStatus status, IndexingResponse body) {
-        return ResponseEntity.status(status).body(body);
     }
 
 
