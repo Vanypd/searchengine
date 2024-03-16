@@ -8,8 +8,6 @@ import searchengine.dto.statistics.StatisticsResponse;
 import searchengine.services.IndexingService;
 import searchengine.services.StatisticsService;
 
-import java.util.Map;
-
 @RestController
 @RequestMapping("/api")
 public class ApiController {

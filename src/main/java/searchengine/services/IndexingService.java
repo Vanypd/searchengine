@@ -154,6 +154,8 @@ public class IndexingService extends DefaultService {
 
 
     public ResponseEntity<IndexingResponse> search(String query, String site, Integer offset, Integer limit) {
+        // TODO реализовать offset и limit
+
 
         if (query.isBlank()) {
             String errorMessage = "Задан пустой поисковый запрос";
