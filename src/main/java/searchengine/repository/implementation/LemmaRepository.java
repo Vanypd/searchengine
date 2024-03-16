@@ -4,12 +4,18 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 import searchengine.model.implementation.Lemma;
+import searchengine.model.implementation.Site;
 import searchengine.repository.GenericRepository;
 
 @Repository
 public interface LemmaRepository extends GenericRepository<Lemma> {
     Lemma findByLemma(String lemma);
+    Lemma findByLemmaAndSiteId(String lemma, Site site);
     boolean existsByLemma(String lemma);
+
+
+    @Query("SELECT MAX(l.frequency) FROM Lemma l")
+    Long findMaxFrequency();
 
 
     @Modifying

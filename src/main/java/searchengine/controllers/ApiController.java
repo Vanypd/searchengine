@@ -45,4 +45,14 @@ public class ApiController {
     public ResponseEntity<IndexingResponse> indexPage(@RequestBody UrlDto url) {
         return indexingService.indexPage(url);
     }
+
+
+    @GetMapping("/search")
+    public ResponseEntity<IndexingResponse> search(
+            @RequestParam String query,
+            @RequestParam(required = false) String site,
+            @RequestParam(required = false, defaultValue = "0") Integer offset,
+            @RequestParam(required = false, defaultValue = "20") Integer limit) {
+        return indexingService.search(query, site, offset, limit);
+    }
 }

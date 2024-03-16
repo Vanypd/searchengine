@@ -7,6 +7,11 @@ import lombok.NoArgsConstructor;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class IndexingResponse {
-    protected boolean result;
+public class SearchResult {
+    String site;
+    String siteName;
+    String uri;
+    String title;
+    String snippet;
+    Float relevance;
 }

@@ -123,4 +123,15 @@ public class HTMLManager {
     public static String getTextFromHTML(@NonNull Document doc) {
         return doc.text();
     }
+
+
+    /**
+     * Метод принимает строковый HTML и возвращает заголовок страницы
+     * @param content String - HTML-контент
+     * @return String - заголовок страницы
+     */
+    public static String getTitleFromContent(String content) {
+        Document doc = Jsoup.parse(content);
+        return doc.title();
+    }
 }

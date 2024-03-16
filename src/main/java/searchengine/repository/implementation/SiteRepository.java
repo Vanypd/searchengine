@@ -24,6 +24,6 @@ public interface SiteRepository extends GenericRepository<Site> {
     @Transactional
     @Query("UPDATE Site s SET s.indexStatus = ?2, lastError = ?3 WHERE s.indexStatus = ?1")
     void updateStatusAndErrorByStatus(IndexStatus oldIndexStatus,
-                                                    IndexStatus newIndexStatus,
-                                                    String errorMessage);
+                                      IndexStatus newIndexStatus,
+                                      String errorMessage);
 }

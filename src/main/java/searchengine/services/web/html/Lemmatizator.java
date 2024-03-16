@@ -72,7 +72,7 @@ public class Lemmatizator {
     }
 
 
-    private HashMap<String, Integer> collectLemmas(String text) {
+    public HashMap<String, Integer> collectLemmas(String text) {
 
         if (text.isBlank()) {
             return new HashMap<>();
