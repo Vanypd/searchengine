@@ -154,7 +154,11 @@ public class IndexingService extends DefaultService {
 
         lemmatizator.save(pageEntity);
         siteEntity.setIndexStatus(IndexStatus.INDEXED);
-        siteRepository.save(siteEntity);
+
+        repositoryManager.executeTransaction(() ->
+            siteRepository.save(siteEntity)
+        );
+
         return getSuccessResponse(new IndexingResponse(true));
     }
 
@@ -200,6 +204,7 @@ public class IndexingService extends DefaultService {
      */
     private List<SearchResult> mapSearchResultAndSortByRelevance(List<Page> pagesList,
                                                                  List<String> lemmas) {
+        // TODO: Оптимизировать маппинг и сортировку
         List<SearchResult> searchResults = new ArrayList<>();
 
         for (Page page : pagesList) {
@@ -236,6 +241,7 @@ public class IndexingService extends DefaultService {
      * @return List<Page>
      */
     private List<Page> getPagesFromLemmasAndSite(List<String> lemmas, Site site) {
+        // TODO: Оптимизировать получение страниц
         List<Page> pages;
 
         if (site != null) {

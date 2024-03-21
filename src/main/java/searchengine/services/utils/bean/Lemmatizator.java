@@ -39,6 +39,7 @@ public final class Lemmatizator {
 
     /**
      * Метод принимает сущность страницы, а затем сохраняет все найденные на ней леммы в базу данных.
+     * Все взаимодействия с базой проходят в транзакциях.
      * @param pageEntity Page
      */
     public void save(Page pageEntity) {
