@@ -1,4 +1,4 @@
-package searchengine.services.utils;
+package searchengine.services.utils.notbean;
 
 import lombok.NonNull;
 import org.slf4j.Logger;
@@ -7,7 +7,7 @@ import org.slf4j.LoggerFactory;
 import java.net.MalformedURLException;
 import java.net.URL;
 
-public class URLParser {
+public final class URLParser {
     private static final Logger LOGGER = LoggerFactory.getLogger(URLParser.class);
 
 
@@ -62,6 +62,7 @@ public class URLParser {
             return url.toString().substring(baseUrl.length());
         }
     }
+
 
     /**
      * Метод принимает ссылку, а затем возвращает путь

@@ -15,7 +15,7 @@ public class ForkJoinPoolManager extends ApplicationConcurrency {
 
 
     public ForkJoinPoolManager() {
-        forkJoinPool = getNewForkJoinPool();
+        forkJoinPool = super.getNewForkJoinPool();
     }
 
 

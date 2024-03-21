@@ -21,7 +21,14 @@ public interface PageRepository extends GenericRepository<Page> {
             "JOIN Index i ON p.id = i.pageId.id " +
             "JOIN Lemma l ON i.lemmaId.id = l.id " +
             "WHERE l.lemma = ?1")
-    List<Page> findPagesByLemma(String lemma);
+    List<Page> searchPagesByLemma(String lemma);
+
+
+    @Query("SELECT p FROM Page p " +
+            "JOIN Index i ON p.id = i.pageId.id " +
+            "JOIN Lemma l ON i.lemmaId.id = l.id " +
+            "WHERE l.lemma = ?1 AND p.siteId = ?2")
+    List<Page> searchPagesByLemmaAndSiteId(String lemma, Site site);
 
 
     @Query("SELECT SUM(i.rank) FROM Index i WHERE i.pageId = ?1")

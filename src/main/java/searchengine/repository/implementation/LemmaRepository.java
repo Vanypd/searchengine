@@ -7,9 +7,11 @@ import searchengine.model.implementation.Lemma;
 import searchengine.model.implementation.Site;
 import searchengine.repository.GenericRepository;
 
+import java.util.List;
+
 @Repository
 public interface LemmaRepository extends GenericRepository<Lemma> {
-    Lemma findByLemma(String lemma);
+    List<Lemma> findByLemma(String lemma);
     Lemma findByLemmaAndSiteId(String lemma, Site site);
     boolean existsByLemma(String lemma);
 
@@ -24,5 +26,5 @@ public interface LemmaRepository extends GenericRepository<Lemma> {
 
 
     @Query("SELECT SUM(i.rank) FROM Index i JOIN i.pageId p JOIN p.siteId s WHERE s.url = ?1")
-    long countLemmasBySiteUrl(String url);
+    Long countLemmasBySiteUrl(String url);
 }

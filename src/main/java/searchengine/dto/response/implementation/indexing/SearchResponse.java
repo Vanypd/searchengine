@@ -1,4 +1,4 @@
-package searchengine.dto.indexing;
+package searchengine.dto.response.implementation.indexing;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -15,7 +15,7 @@ public class SearchResponse extends IndexingResponse {
 
 
     public SearchResponse(boolean result, long count, List<SearchResult> data) {
-        this.result = result;
+        super(result);
         this.count = count;
         this.data = data;
     }

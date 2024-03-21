@@ -8,7 +8,7 @@ import searchengine.concurrency.ApplicationConcurrency;
 public class ThreadPoolManager extends ApplicationConcurrency {
 
     public ThreadPoolManager() {
-        threadPoolExecutor = getNewThreadPool();
+        threadPoolExecutor = super.getNewThreadPool();
     }
 
 

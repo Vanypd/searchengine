@@ -1,4 +1,4 @@
-package searchengine.services.web.html;
+package searchengine.services.utils.bean;
 
 import org.apache.lucene.morphology.LuceneMorphology;
 import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
@@ -13,16 +13,17 @@ import searchengine.model.implementation.Site;
 import searchengine.repository.RepositoryManager;
 import searchengine.repository.implementation.IndexRepository;
 import searchengine.repository.implementation.LemmaRepository;
+import searchengine.services.utils.notbean.HTMLManager;
 
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 
 @Component
-public class Lemmatizator {
+public final class Lemmatizator {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(Lemmatizator.class);
-    private static final String[] functionalPartsOfSpeech = new String[]{"СОЮЗ", "ПРЕДЛ", "МЕЖД", "ЧАСТ"};
+    private static final String[] FUNCTIONAL_PARTS_OF_SPEECH = new String[]{"СОЮЗ", "ПРЕДЛ", "МЕЖД", "ЧАСТ"};
     private final RepositoryManager repositoryManager;
     private final LemmaRepository lemmaRepository;
     private final IndexRepository indexRepository;
@@ -36,6 +37,10 @@ public class Lemmatizator {
     }
 
 
+    /**
+     * Метод принимает сущность страницы, а затем сохраняет все найденные на ней леммы в базу данных.
+     * @param pageEntity Page
+     */
     public void save(Page pageEntity) {
         Site siteEntity = pageEntity.getSiteId();
         String text = HTMLManager.getTextFromHTML(pageEntity.getContent());
@@ -50,18 +55,22 @@ public class Lemmatizator {
             Index indexEntity;
 
             if (lemmaRepository.existsByLemma(str)) {
-                lemmaEntity = lemmaRepository.findByLemma(str);
+                lemmaEntity = lemmaRepository.findByLemmaAndSiteId(str, siteEntity);
                 indexEntity = indexRepository.findByPageIdAndLemmaId(pageEntity, lemmaEntity);
 
                 if (indexEntity == null) {
                     createAndSaveNewIndex(pageEntity, lemmaEntity, count);
+
+                    repositoryManager.executeTransaction(() ->
+                            lemmaRepository.incrementFrequency(lemmaEntity.getId())
+                    );
+
                     return;
                 }
 
-                repositoryManager.executeTransaction(() -> {
-                    lemmaRepository.incrementFrequency(lemmaEntity.getId());
-                    indexRepository.incrementRank(indexEntity.getId(), count);
-                });
+                repositoryManager.executeTransaction(() ->
+                        indexRepository.incrementRank(indexEntity.getId(), count)
+                );
 
             } else {
                 // TODO: Полностью убрать возможность создания дубликата леммы
@@ -72,6 +81,12 @@ public class Lemmatizator {
     }
 
 
+    /**
+     * Метод принимает текст, разбивает его на слова, избавляется от служебных частей речи и возвращает
+     * HashMap, где ключом является слово, а значением количество его повторений в тексте
+     * @param text String
+     * @return HashMap<String, Integer>
+     */
     public HashMap<String, Integer> collectLemmas(String text) {
 
         if (text.isBlank()) {
@@ -124,7 +139,7 @@ public class Lemmatizator {
         List<String> wordBaseForms = luceneMorph.getMorphInfo(word);
         String wordProps = wordBaseForms.get(0);
 
-        for (String part : functionalPartsOfSpeech) {
+        for (String part : FUNCTIONAL_PARTS_OF_SPEECH) {
             if (wordProps.contains(part)) {
                 return true;
             }

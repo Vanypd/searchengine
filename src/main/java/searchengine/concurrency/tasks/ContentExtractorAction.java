@@ -1,4 +1,4 @@
-package searchengine.services.web.scraping;
+package searchengine.concurrency.tasks;
 
 import org.springframework.http.HttpStatus;
 import searchengine.concurrency.implementation.ThreadPoolManager;
@@ -6,9 +6,9 @@ import searchengine.model.implementation.Page;
 import searchengine.repository.RepositoryManager;
 import searchengine.repository.implementation.PageRepository;
 import searchengine.repository.implementation.SiteRepository;
-import searchengine.services.utils.URLParser;
-import searchengine.services.web.html.HTMLManager;
-import searchengine.services.web.html.Lemmatizator;
+import searchengine.services.utils.notbean.URLParser;
+import searchengine.services.utils.notbean.HTMLManager;
+import searchengine.services.utils.bean.Lemmatizator;
 
 import java.net.URL;
 import java.time.LocalDateTime;
@@ -107,10 +107,5 @@ public class ContentExtractorAction extends RecursiveAction {
 
     public static void stop() {
         isStopped = true;
-    }
-
-
-    public static boolean isStopped() {
-        return isStopped;
     }
 }

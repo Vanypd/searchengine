@@ -4,29 +4,35 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import searchengine.concurrency.implementation.ForkJoinPoolManager;
+import searchengine.concurrency.tasks.ContentExtractorAction;
 import searchengine.config.SiteProps;
 import searchengine.config.SitesList;
-import searchengine.dto.indexing.*;
+import searchengine.dto.request.UrlDto;
+import searchengine.dto.response.implementation.indexing.IndexingErrorResponse;
+import searchengine.dto.response.implementation.indexing.IndexingResponse;
+import searchengine.dto.response.implementation.indexing.SearchResponse;
+import searchengine.dto.response.implementation.indexing.SearchResult;
 import searchengine.model.implementation.IndexStatus;
 import searchengine.model.implementation.Lemma;
 import searchengine.model.implementation.Page;
 import searchengine.model.implementation.Site;
 import searchengine.repository.RepositoryManager;
-import searchengine.services.utils.URLParser;
-import searchengine.services.web.html.HTMLManager;
-import searchengine.services.web.html.Lemmatizator;
-import searchengine.services.web.scraping.ContentExtractorAction;
+import searchengine.services.utils.bean.Lemmatizator;
+import searchengine.services.utils.notbean.HTMLManager;
+import searchengine.services.utils.notbean.URLParser;
 
 import java.net.URL;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.RecursiveAction;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 public class IndexingService extends DefaultService {
@@ -154,8 +160,7 @@ public class IndexingService extends DefaultService {
 
 
     public ResponseEntity<IndexingResponse> search(String query, String site, Integer offset, Integer limit) {
-        // TODO реализовать offset и limit
-
+        LOGGER.info("Вызван поиск по запросу \"{}\"", query);
 
         if (query.isBlank()) {
             String errorMessage = "Задан пустой поисковый запрос";
@@ -166,27 +171,38 @@ public class IndexingService extends DefaultService {
         List<String> lemmas = getFilteredSearchLemmas(query, siteEntity);
 
         if (lemmas.isEmpty()) {
-            return getSuccessResponse(
-                    new SearchResponse(true, 0, new ArrayList<>())
-            );
+            return getSuccessResponse(new SearchResponse(true, 0, new ArrayList<>()));
         }
 
-        List<Page> rareLemmaPages = pageRepository.findPagesByLemma(lemmas.get(0));
+        List<Page> pages = getPagesFromLemmasAndSite(lemmas, siteEntity);
 
-        for (int i = 1; i < lemmas.size(); i++) {
-            String currentLemma = lemmas.get(i);
-            rareLemmaPages.removeIf(currentPage -> !currentPage.getContent().contains(currentLemma));
+        if (pages.isEmpty()) {
+            return getSuccessResponse(new SearchResponse(true,0, new ArrayList<>()));
         }
 
-        if (rareLemmaPages.isEmpty()) {
-            return getSuccessResponse(
-                    new SearchResponse(true,0, new ArrayList<>())
-            );
-        }
+        List<SearchResult> searchResults = mapSearchResultAndSortByRelevance(pages, lemmas);
 
+        return getSuccessResponse(
+                new SearchResponse(true, pages.size(), searchResults.subList(offset, offset + limit))
+        );
+    }
+
+
+    // UTILS METHODS //
+
+
+    /**
+     * Метод является маппером DTO SearchResult из сущности Page. Так же метод ищет наивысшую
+     * релевантность и сортирует список SearchResult относительно неё.
+     * @param pagesList List сущностей Page
+     * @param lemmas List<String>
+     * @return List<SearchResult>
+     */
+    private List<SearchResult> mapSearchResultAndSortByRelevance(List<Page> pagesList,
+                                                                 List<String> lemmas) {
         List<SearchResult> searchResults = new ArrayList<>();
 
-        for (Page page : rareLemmaPages) {
+        for (Page page : pagesList) {
             SearchResult searchResult = new SearchResult();
             searchResult.setSite(page.getSiteId().getUrl());
             searchResult.setSiteName(page.getSiteId().getName());
@@ -207,26 +223,58 @@ public class IndexingService extends DefaultService {
             searchResult.setRelevance(absoluteRelevance / highestRelevance);
         }
 
-        return getSuccessResponse(
-                new SearchResponse(true, rareLemmaPages.size(), searchResults)
-        );
+        return searchResults;
+    }
+
+    /**
+     * Метод ищет сущности Page в базе данных по переданным в параметры значениям и возвращает в виде
+     * списка. Изначально метод извлекает из базы данных страницы, которые содержат самый первый
+     * элемент списка лемм. Затем при помощи цикла из списка страниц удаляются те страницы, которые не
+     * имеют в себе остальные леммы.
+     * @param lemmas Список строк лемм, предположительно отсортированный по возрастанию релевантности
+     * @param site Сущность Site
+     * @return List<Page>
+     */
+    private List<Page> getPagesFromLemmasAndSite(List<String> lemmas, Site site) {
+        List<Page> pages;
+
+        if (site != null) {
+            pages = pageRepository.searchPagesByLemmaAndSiteId(lemmas.get(0), site);
+        } else {
+            pages = pageRepository.searchPagesByLemma(lemmas.get(0));
+        }
+
+        for (int i = 1; i < lemmas.size(); i++) {
+            String currentLemma = lemmas.get(i);
+            pages.removeIf(currentPage -> !currentPage.getContent().contains(currentLemma));
+        }
+
+        return pages;
     }
 
 
-    // UTILS METHODS //
-
-
+    /**
+     * Метод получает список лемм из переданного в параметры поискового запроса и ищет в базе данных
+     * сущности данных лемм, если site == null, то леммы ищутся на всех страницах. Полученный список
+     * очищается от возможных null-значений, затем и от лемм, которые встречаются на слишком большом
+     * количестве страниц. Список сортируется в порядке увеличения частоты встречаемости, очищается
+     * от повторов и возвращается в виде List.
+     * @param query Строка поискового запроса
+     * @param site Сущность Site
+     * @return List<String>
+     */
     private List<String> getFilteredSearchLemmas(String query, Site site) {
+        long threshold = (long) (lemmaRepository.findMaxFrequency() * 0.9);
+
         return lemmatizator.collectLemmas(query).keySet().stream()
-                .map(lemma -> (site == null)
-                ? lemmaRepository.findByLemma(lemma)
-                : lemmaRepository.findByLemmaAndSiteId(lemma, site)
+                .flatMap(lemma -> (site == null)
+                        ? lemmaRepository.findByLemma(lemma).stream()
+                        : Stream.of(lemmaRepository.findByLemmaAndSiteId(lemma, site))
                 )
                 .filter(Objects::nonNull)
-                .filter(lemmaEntity -> lemmaEntity.getFrequency() <= lemmaRepository.findMaxFrequency() * 0.8)
+                .filter(lemmaEntity -> lemmaEntity.getFrequency() <= threshold)
                 .sorted(Comparator.comparingLong(Lemma::getFrequency))
-                .map(Lemma::getLemma)
-                .collect(Collectors.toList());
+                .map(Lemma::getLemma).distinct().collect(Collectors.toList());
     }
 
 
@@ -265,7 +313,9 @@ public class IndexingService extends DefaultService {
         String resultText = elements.get(0).text();
 
         for (String lemma : lemmas) {
-            resultText = resultText.replaceAll(lemma, "<b>" + lemma + "</b>");
+            Pattern pattern = Pattern.compile(lemma, Pattern.CASE_INSENSITIVE);
+            Matcher matcher = pattern.matcher(resultText);
+            resultText = matcher.replaceAll("<b>$0</b>");
         }
 
         if (resultText.length() > 200) {
@@ -276,11 +326,22 @@ public class IndexingService extends DefaultService {
     }
 
 
+    /**
+     * Метод получает абсолютную релевантность - сумму всех rank всех найденных на странице лемм
+     * и возвращает данное значение.
+     * @param page Сущность Page
+     * @return float
+     */
     private float getAbsoluteRelevance(Page page) {
         return pageRepository.getRankSumForPage(page);
     }
 
 
+    /**
+     * Метод является маппером из SiteProps в Site.
+     * @param site Сущность SiteProps
+     * @return Site
+     */
     private Site mapSiteEntityFromSiteList(SiteProps site) {
         Site siteEntity = new Site();
         siteEntity.setUrl(site.getUrl());
@@ -293,6 +354,14 @@ public class IndexingService extends DefaultService {
     }
 
 
+    /**
+     * Метод принимает строку ссылки в параметры и проверяет наличие данной ссылки в конфигурационном
+     * файле. При наличии файла, метод получает данный сайт из базы данных и возвращает его. При отсутствии
+     * сайта в базе данных создаётся новый сайт, сохраняется в базе и возвращается. Если в парметры был
+     * передан null, метод вернёт null.
+     * @param url Базовый URL сайта
+     * @return Site
+     */
     private Site getSiteEntityFromUrl(String url) {
         Site siteEntity = null;
 
@@ -321,6 +390,13 @@ public class IndexingService extends DefaultService {
     }
 
 
+    /**
+     * Метод выполняет переданную в него рекурсивную задачу и возвращает true если задача
+     * завершилась с ошибками, в противном случае возвращает false.
+     * @param action Рекурсивная задача
+     * @param siteEntity Сущность Site
+     * @return boolean
+     */
     private static boolean hasErrorsDuringInvocation(RecursiveAction action, Site siteEntity) {
         try {
             action.invoke();
@@ -330,18 +406,5 @@ public class IndexingService extends DefaultService {
             siteEntity.setIndexStatus(IndexStatus.FAILED);
             return true;
         }
-    }
-
-
-    // RESPONSE GETTERS //
-
-
-    private ResponseEntity<IndexingResponse> getSuccessResponse(IndexingResponse body) {
-        return ResponseEntity.ok(body);
-    }
-
-
-    private ResponseEntity<IndexingResponse> getFailedResponse(IndexingResponse body) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 }

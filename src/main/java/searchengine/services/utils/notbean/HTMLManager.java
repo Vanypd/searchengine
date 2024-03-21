@@ -1,4 +1,4 @@
-package searchengine.services.web.html;
+package searchengine.services.utils.notbean;
 
 import lombok.NonNull;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
@@ -14,7 +14,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import searchengine.model.implementation.Page;
 import searchengine.repository.implementation.SiteRepository;
-import searchengine.services.utils.URLParser;
 
 import java.io.IOException;
 import java.net.URL;
@@ -23,7 +22,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
-public class HTMLManager {
+public final class HTMLManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(HTMLManager.class);
 
 

@@ -2,9 +2,9 @@ package searchengine.controllers;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import searchengine.dto.indexing.IndexingResponse;
-import searchengine.dto.indexing.UrlDto;
-import searchengine.dto.statistics.StatisticsResponse;
+import searchengine.dto.response.implementation.indexing.IndexingResponse;
+import searchengine.dto.request.UrlDto;
+import searchengine.dto.response.implementation.statistics.StatisticsResponse;
 import searchengine.services.IndexingService;
 import searchengine.services.StatisticsService;
 
@@ -14,6 +14,7 @@ public class ApiController {
 
     private final StatisticsService statisticsService;
     private final IndexingService indexingService;
+
 
     public ApiController(StatisticsService statisticsService, IndexingService indexingService) {
         this.statisticsService = statisticsService;
@@ -51,6 +52,7 @@ public class ApiController {
             @RequestParam(required = false) String site,
             @RequestParam(required = false, defaultValue = "0") Integer offset,
             @RequestParam(required = false, defaultValue = "20") Integer limit) {
+
         return indexingService.search(query, site, offset, limit);
     }
 }

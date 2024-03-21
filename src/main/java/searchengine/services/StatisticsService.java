@@ -4,10 +4,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import searchengine.config.SiteProps;
 import searchengine.config.SitesList;
-import searchengine.dto.statistics.DetailedStatisticsItem;
-import searchengine.dto.statistics.StatisticsData;
-import searchengine.dto.statistics.StatisticsResponse;
-import searchengine.dto.statistics.TotalStatistics;
+import searchengine.dto.response.implementation.statistics.DetailedStatisticsItem;
+import searchengine.dto.response.implementation.statistics.StatisticsData;
+import searchengine.dto.response.implementation.statistics.StatisticsResponse;
+import searchengine.dto.response.implementation.statistics.TotalStatistics;
 import searchengine.model.implementation.Site;
 import searchengine.repository.RepositoryManager;
 
@@ -43,7 +43,14 @@ public class StatisticsService extends DefaultService {
 
             if (!(siteEntity == null)) {
                 pages = (int) pageRepository.countPagesBySiteUrl(siteProps.getUrl());
-                lemmas = (int) lemmaRepository.countLemmasBySiteUrl(siteProps.getUrl());
+                Long lemmasCount = lemmaRepository.countLemmasBySiteUrl(siteProps.getUrl());
+
+                if (lemmasCount != null) {
+                    lemmas = lemmasCount.intValue();
+                } else {
+                    lemmas = 0;
+                }
+
                 status = siteEntity.getIndexStatus().name();
                 error = siteEntity.getLastError();
                 statusTime = siteEntity.getStatusTime().toInstant(java.time.ZoneOffset.UTC).toEpochMilli();
@@ -75,6 +82,6 @@ public class StatisticsService extends DefaultService {
         data.setDetailed(detailed);
         response.setStatistics(data);
         response.setResult(true);
-        return ResponseEntity.ok(response);
+        return getSuccessResponse(response);
     }
 }
