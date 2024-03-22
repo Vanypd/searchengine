@@ -1,17 +1,16 @@
 package searchengine.dto.response.implementation.indexing;
 
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.util.List;
 
-@EqualsAndHashCode(callSuper = true)
-@Data
+@Getter
+@Setter
+@AllArgsConstructor
 @NoArgsConstructor
 public class SearchResponse extends IndexingResponse {
-    long count;
-    List<SearchResult> data;
+    private long count;
+    private List<SearchResult> data;
 
 
     public SearchResponse(boolean result, long count, List<SearchResult> data) {

@@ -1,8 +1,11 @@
 package searchengine.dto.response.implementation.statistics;
 
-import lombok.Data;
+import lombok.*;
 
-@Data
+@Getter
+@Setter
+@AllArgsConstructor
+@NoArgsConstructor
 public class TotalStatistics {
     private int sites;
     private int pages;

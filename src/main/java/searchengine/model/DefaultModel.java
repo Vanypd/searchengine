@@ -8,7 +8,6 @@ import lombok.Setter;
 @Setter
 @MappedSuperclass
 public abstract class DefaultModel {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", columnDefinition = "INT", nullable = false)

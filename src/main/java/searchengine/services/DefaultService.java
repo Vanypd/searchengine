@@ -15,24 +15,14 @@ import searchengine.repository.implementation.SiteRepository;
 public abstract class DefaultService {
     protected static final Logger LOGGER = LoggerFactory.getLogger(DefaultService.class);
     protected final RepositoryManager repositoryManager;
-    protected final SiteRepository siteRepository;
-    protected final PageRepository pageRepository;
-    protected final LemmaRepository lemmaRepository;
-    protected final IndexRepository indexRepository;
 
 
     @Autowired
     public DefaultService(RepositoryManager repositoryManager) {
         this.repositoryManager = repositoryManager;
-        siteRepository = repositoryManager.getSiteRepository();
-        pageRepository = repositoryManager.getPageRepository();
-        lemmaRepository = repositoryManager.getLemmaRepository();
-        indexRepository = repositoryManager.getIndexRepository();
     }
 
-
     // RESPONSE GETTERS //
-
 
     protected <T extends DefaultResponse> ResponseEntity<T> getSuccessResponse(T body) {
         return ResponseEntity.ok(body);

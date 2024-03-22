@@ -11,8 +11,6 @@ import searchengine.model.implementation.Lemma;
 import searchengine.model.implementation.Page;
 import searchengine.model.implementation.Site;
 import searchengine.repository.RepositoryManager;
-import searchengine.repository.implementation.IndexRepository;
-import searchengine.repository.implementation.LemmaRepository;
 import searchengine.services.utils.notbean.HTMLManager;
 
 import java.io.IOException;
@@ -25,17 +23,15 @@ public final class Lemmatizator {
     private static final Logger LOGGER = LoggerFactory.getLogger(Lemmatizator.class);
     private static final String[] FUNCTIONAL_PARTS_OF_SPEECH = new String[]{"СОЮЗ", "ПРЕДЛ", "МЕЖД", "ЧАСТ"};
     private final RepositoryManager repositoryManager;
-    private final LemmaRepository lemmaRepository;
-    private final IndexRepository indexRepository;
 
+    // CONSTRUCTORS //
 
     @Autowired
     public Lemmatizator(RepositoryManager repositoryManager) {
         this.repositoryManager = repositoryManager;
-        lemmaRepository = repositoryManager.getLemmaRepository();
-        indexRepository = repositoryManager.getIndexRepository();
     }
 
+    // METHODS //
 
     /**
      * Метод принимает сущность страницы, а затем сохраняет все найденные на ней леммы в базу данных.
@@ -55,22 +51,22 @@ public final class Lemmatizator {
             Lemma lemmaEntity;
             Index indexEntity;
 
-            if (lemmaRepository.existsByLemma(str)) {
-                lemmaEntity = lemmaRepository.findByLemmaAndSiteId(str, siteEntity);
-                indexEntity = indexRepository.findByPageIdAndLemmaId(pageEntity, lemmaEntity);
+            if (repositoryManager.getLemmaRepository().existsByLemma(str)) {
+                lemmaEntity = repositoryManager.getLemmaRepository().findByLemmaAndSiteId(str, siteEntity);
+                indexEntity = repositoryManager.getIndexRepository().findByPageIdAndLemmaId(pageEntity, lemmaEntity);
 
                 if (indexEntity == null) {
                     createAndSaveNewIndex(pageEntity, lemmaEntity, count);
 
                     repositoryManager.executeTransaction(() ->
-                            lemmaRepository.incrementFrequency(lemmaEntity.getId())
+                            repositoryManager.getLemmaRepository().incrementFrequency(lemmaEntity.getId())
                     );
 
                     return;
                 }
 
                 repositoryManager.executeTransaction(() ->
-                        indexRepository.incrementRank(indexEntity.getId(), count)
+                        repositoryManager.getIndexRepository().incrementRank(indexEntity.getId(), count)
                 );
 
             } else {
@@ -124,9 +120,7 @@ public final class Lemmatizator {
         return result;
     }
 
-
     // UTILS METHODS //
-
 
     /**
      * Метод проверяет является ли переданное в параметры слово служебной частью речи и возвращает
@@ -180,6 +174,7 @@ public final class Lemmatizator {
         }
     }
 
+
     /**
      * Метод создаёт, сохраняет в базу данных в рамках одной транзакции и возвращает
      * новую сущность Lemma.
@@ -195,7 +190,7 @@ public final class Lemmatizator {
         lemmaEntity.setFrequency(1L);
 
         repositoryManager.executeTransaction(() ->
-                lemmaRepository.save(lemmaEntity)
+                repositoryManager.getLemmaRepository().save(lemmaEntity)
         );
 
         return lemmaEntity;
@@ -216,7 +211,7 @@ public final class Lemmatizator {
         indexEntity.setRank(count.floatValue());
 
         repositoryManager.executeTransaction(() ->
-                indexRepository.save(indexEntity)
+                repositoryManager.getIndexRepository().save(indexEntity)
         );
 
     }
@@ -230,17 +225,17 @@ public final class Lemmatizator {
      * @param page Сущность страницы
      */
     private void checkIndexExistence(Page page) {
-        List<Index> indexList = indexRepository.findAllByPageId(page);
+        List<Index> indexList = repositoryManager.getIndexRepository().findAllByPageId(page);
 
         if (!indexList.isEmpty()) {
-            indexRepository.deleteAll(indexList);
+            repositoryManager.getIndexRepository().deleteAll(indexList);
 
             for (Index index : indexList) {
                 Lemma lemma = index.getLemmaId();
                 lemma.setFrequency(lemma.getFrequency() - 1);
 
                 if (lemma.getFrequency() == 0) {
-                    lemmaRepository.delete(lemma);
+                    repositoryManager.getLemmaRepository().delete(lemma);
                 }
             }
         }

@@ -10,27 +10,13 @@ import java.util.concurrent.CountDownLatch;
 @Component
 public class ForkJoinPoolManager extends ApplicationConcurrency {
 
-
-    // CONSTRUCTORS //
-
-
     public ForkJoinPoolManager() {
         forkJoinPool = super.getNewForkJoinPool();
     }
 
 
-    // FORK/JOIN POOL METHODS //
-
-
     public void execute(Runnable task) {
         forkJoinPool.execute(task);
-    }
-
-
-    public void executeAwait(Runnable task) {
-        List<Runnable> tasks = new ArrayList<>();
-        tasks.add(task);
-        executeAwait(tasks);
     }
 
 

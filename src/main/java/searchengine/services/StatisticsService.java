@@ -18,6 +18,7 @@ import java.util.List;
 public class StatisticsService extends DefaultService {
     private final SitesList sites;
 
+
     public StatisticsService(RepositoryManager repositoryManager, SitesList sites) {
         super(repositoryManager);
         this.sites = sites;
@@ -33,7 +34,7 @@ public class StatisticsService extends DefaultService {
         List<SiteProps> sitesList = sites.getSites();
 
         for (SiteProps siteProps : sitesList) {
-            Site siteEntity = siteRepository.findByUrl(siteProps.getUrl());
+            Site siteEntity = repositoryManager.getSiteRepository().findByUrl(siteProps.getUrl());
             DetailedStatisticsItem item = new DetailedStatisticsItem();
             int pages;
             int lemmas;
@@ -42,8 +43,8 @@ public class StatisticsService extends DefaultService {
             long statusTime;
 
             if (!(siteEntity == null)) {
-                pages = (int) pageRepository.countPagesBySiteUrl(siteProps.getUrl());
-                Long lemmasCount = lemmaRepository.countLemmasBySiteUrl(siteProps.getUrl());
+                pages = (int) repositoryManager.getPageRepository().countPagesBySiteUrl(siteProps.getUrl());
+                Long lemmasCount = repositoryManager.getLemmaRepository().countLemmasBySiteUrl(siteProps.getUrl());
 
                 if (lemmasCount != null) {
                     lemmas = lemmasCount.intValue();

@@ -4,8 +4,8 @@ import lombok.*;
 
 @Getter
 @Setter
-@NoArgsConstructor
 @AllArgsConstructor
+@NoArgsConstructor
 public class IndexingErrorResponse extends IndexingResponse {
     private String error;
 }

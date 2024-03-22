@@ -1,14 +1,14 @@
 package searchengine.concurrency.tasks;
 
 import org.springframework.http.HttpStatus;
-import searchengine.concurrency.implementation.ThreadPoolManager;
+import searchengine.concurrency.utils.ThreadUtil;
 import searchengine.model.implementation.Page;
 import searchengine.repository.RepositoryManager;
 import searchengine.repository.implementation.PageRepository;
 import searchengine.repository.implementation.SiteRepository;
-import searchengine.services.utils.notbean.URLParser;
-import searchengine.services.utils.notbean.HTMLManager;
 import searchengine.services.utils.bean.Lemmatizator;
+import searchengine.services.utils.notbean.HTMLManager;
+import searchengine.services.utils.notbean.URLParser;
 
 import java.net.URL;
 import java.time.LocalDateTime;
@@ -31,9 +31,7 @@ public class ContentExtractorAction extends RecursiveAction {
 
     private static volatile boolean isStopped = false;
 
-
     // CONSTRUCTORS //
-
 
     public ContentExtractorAction(RepositoryManager repositoryManager, String baseUrl, Lemmatizator lemmatizator) {
         this.repositoryManager = repositoryManager;
@@ -51,9 +49,7 @@ public class ContentExtractorAction extends RecursiveAction {
         this.path = path;
     }
 
-
     // METHODS //
-
 
     @Override
     public void compute() {
@@ -88,7 +84,7 @@ public class ContentExtractorAction extends RecursiveAction {
                 setOfUrl.put(path, path);
             }
 
-            ThreadPoolManager.executeDelay(200);
+            ThreadUtil.executeDelay(200);
             ContentExtractorAction task = new ContentExtractorAction(baseUrl, path);
             task.repositoryManager = this.repositoryManager;
             task.lemmatizator = this.lemmatizator;

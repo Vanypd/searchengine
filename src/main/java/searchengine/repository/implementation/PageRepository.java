@@ -12,10 +12,8 @@ import java.util.List;
 public interface PageRepository extends GenericRepository<Page> {
     Page findBySiteIdAndPath(Site site, String path);
 
-
     @Query("SELECT COUNT(p) FROM Page p WHERE p.siteId.url = ?1")
     long countPagesBySiteUrl(String url);
-
 
     @Query("SELECT p FROM Page p " +
             "JOIN Index i ON p.id = i.pageId.id " +
@@ -23,13 +21,11 @@ public interface PageRepository extends GenericRepository<Page> {
             "WHERE l.lemma = ?1")
     List<Page> searchPagesByLemma(String lemma);
 
-
     @Query("SELECT p FROM Page p " +
             "JOIN Index i ON p.id = i.pageId.id " +
             "JOIN Lemma l ON i.lemmaId.id = l.id " +
             "WHERE l.lemma = ?1 AND p.siteId = ?2")
     List<Page> searchPagesByLemmaAndSiteId(String lemma, Site site);
-
 
     @Query("SELECT SUM(i.rank) FROM Index i WHERE i.pageId = ?1")
     Long getRankSumForPage(Page page);

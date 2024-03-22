@@ -42,9 +42,7 @@ public class IndexingService extends DefaultService {
     private final Lemmatizator lemmatizator;
     private boolean isIndexing = false;
 
-
     // CONSTRUCTORS //
-
 
     @Autowired
     public IndexingService(SitesList sitesList, RepositoryManager repositoryManager,
@@ -55,9 +53,7 @@ public class IndexingService extends DefaultService {
         this.lemmatizator = lemmatizator;
     }
 
-
     // API METHODS //
-
 
     public ResponseEntity<IndexingResponse> startIndexing() {
         LOGGER.info("Вызван запуск полной индексации");
@@ -67,10 +63,10 @@ public class IndexingService extends DefaultService {
         }
 
         isIndexing = true;
-        siteRepository.deleteAll();
-        pageRepository.deleteAll();
-        lemmaRepository.deleteAll();
-        indexRepository.deleteAll();
+        repositoryManager.getSiteRepository().deleteAll();
+        repositoryManager.getPageRepository().deleteAll();
+        repositoryManager.getLemmaRepository().deleteAll();
+        repositoryManager.getIndexRepository().deleteAll();
 
         AtomicInteger errorsCount = new AtomicInteger();
         List<Runnable> tasks = new ArrayList<>();
@@ -87,7 +83,7 @@ public class IndexingService extends DefaultService {
 
             siteEntity.setIndexStatus(IndexStatus.INDEXED);
             repositoryManager.executeTransaction(() ->
-                    siteRepository.save(siteEntity)
+                    repositoryManager.getSiteRepository().save(siteEntity)
             );
         }));
 
@@ -115,7 +111,7 @@ public class IndexingService extends DefaultService {
 
         repositoryManager.executeTransaction(() -> {
             String errorMessage = "Индексация остановлена пользователем";
-            siteRepository.updateStatusAndErrorByStatus(IndexStatus.INDEXING, IndexStatus.FAILED, errorMessage);
+            repositoryManager.getSiteRepository().updateStatusAndErrorByStatus(IndexStatus.INDEXING, IndexStatus.FAILED, errorMessage);
         });
 
         return getSuccessResponse(new IndexingResponse(true));
@@ -132,12 +128,12 @@ public class IndexingService extends DefaultService {
         }
 
         siteEntity.setIndexStatus(IndexStatus.INDEXING);
-        siteRepository.save(siteEntity);
+        repositoryManager.getSiteRepository().save(siteEntity);
 
         URL url = URLParser.mapStringToUrl(urlDto.getUrl());
         String path = URLParser.getPathFromUrl(url);
-        Page pageEntity = pageRepository.findBySiteIdAndPath(siteEntity, path);
-        Page newPageEntity = HTMLManager.getPageEntity(url, siteRepository);
+        Page pageEntity = repositoryManager.getPageRepository().findBySiteIdAndPath(siteEntity, path);
+        Page newPageEntity = HTMLManager.getPageEntity(url, repositoryManager.getSiteRepository());
 
         if (pageEntity != null) {
             pageEntity.setContent(newPageEntity.getContent());
@@ -148,15 +144,15 @@ public class IndexingService extends DefaultService {
 
         Page finalPageEntity = pageEntity;
         repositoryManager.executeTransaction(() -> {
-            pageRepository.save(finalPageEntity);
-            siteRepository.updateStatusTimeById(finalPageEntity.getId(), LocalDateTime.now());
+            repositoryManager.getPageRepository().save(finalPageEntity);
+            repositoryManager.getSiteRepository().updateStatusTimeById(finalPageEntity.getId(), LocalDateTime.now());
         });
 
         lemmatizator.save(pageEntity);
         siteEntity.setIndexStatus(IndexStatus.INDEXED);
 
         repositoryManager.executeTransaction(() ->
-            siteRepository.save(siteEntity)
+                repositoryManager.getSiteRepository().save(siteEntity)
         );
 
         return getSuccessResponse(new IndexingResponse(true));
@@ -191,9 +187,7 @@ public class IndexingService extends DefaultService {
         );
     }
 
-
     // UTILS METHODS //
-
 
     /**
      * Метод является маппером DTO SearchResult из сущности Page. Так же метод ищет наивысшую
@@ -231,6 +225,7 @@ public class IndexingService extends DefaultService {
         return searchResults;
     }
 
+
     /**
      * Метод ищет сущности Page в базе данных по переданным в параметры значениям и возвращает в виде
      * списка. Изначально метод извлекает из базы данных страницы, которые содержат самый первый
@@ -245,9 +240,9 @@ public class IndexingService extends DefaultService {
         List<Page> pages;
 
         if (site != null) {
-            pages = pageRepository.searchPagesByLemmaAndSiteId(lemmas.get(0), site);
+            pages = repositoryManager.getPageRepository().searchPagesByLemmaAndSiteId(lemmas.get(0), site);
         } else {
-            pages = pageRepository.searchPagesByLemma(lemmas.get(0));
+            pages = repositoryManager.getPageRepository().searchPagesByLemma(lemmas.get(0));
         }
 
         for (int i = 1; i < lemmas.size(); i++) {
@@ -270,12 +265,12 @@ public class IndexingService extends DefaultService {
      * @return List<String>
      */
     private List<String> getFilteredSearchLemmas(String query, Site site) {
-        long threshold = (long) (lemmaRepository.findMaxFrequency() * 0.9);
+        long threshold = (long) (repositoryManager.getLemmaRepository().findMaxFrequency() * 0.9);
 
         return lemmatizator.collectLemmas(query).keySet().stream()
                 .flatMap(lemma -> (site == null)
-                        ? lemmaRepository.findByLemma(lemma).stream()
-                        : Stream.of(lemmaRepository.findByLemmaAndSiteId(lemma, site))
+                        ? repositoryManager.getLemmaRepository().findByLemma(lemma).stream()
+                        : Stream.of(repositoryManager.getLemmaRepository().findByLemmaAndSiteId(lemma, site))
                 )
                 .filter(Objects::nonNull)
                 .filter(lemmaEntity -> lemmaEntity.getFrequency() <= threshold)
@@ -339,7 +334,7 @@ public class IndexingService extends DefaultService {
      * @return float
      */
     private float getAbsoluteRelevance(Page page) {
-        return pageRepository.getRankSumForPage(page);
+        return repositoryManager.getPageRepository().getRankSumForPage(page);
     }
 
 
@@ -355,7 +350,7 @@ public class IndexingService extends DefaultService {
         siteEntity.setIndexStatus(IndexStatus.INDEXING);
         siteEntity.setLastError("");
         siteEntity.setStatusTime(LocalDateTime.now());
-        siteRepository.save(siteEntity);
+        repositoryManager.getSiteRepository().save(siteEntity);
         return siteEntity;
     }
 
@@ -378,12 +373,12 @@ public class IndexingService extends DefaultService {
         for (SiteProps site : sitesList.getSites()) {
 
             if (url.startsWith(site.getUrl())) {
-                Site foundedSite = siteRepository.findByUrl(site.getUrl());
+                Site foundedSite = repositoryManager.getSiteRepository().findByUrl(site.getUrl());
 
                 if (foundedSite == null) {
                     Site finalFoundedSite = mapSiteEntityFromSiteList(site);
                     repositoryManager.executeTransaction(() ->
-                            siteRepository.save(finalFoundedSite)
+                            repositoryManager.getSiteRepository().save(finalFoundedSite)
                     );
                     foundedSite = finalFoundedSite;
                 }
