@@ -7,10 +7,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import searchengine.dto.response.DefaultResponse;
 import searchengine.repository.RepositoryManager;
-import searchengine.repository.implementation.IndexRepository;
-import searchengine.repository.implementation.LemmaRepository;
-import searchengine.repository.implementation.PageRepository;
-import searchengine.repository.implementation.SiteRepository;
 
 public abstract class DefaultService {
     protected static final Logger LOGGER = LoggerFactory.getLogger(DefaultService.class);

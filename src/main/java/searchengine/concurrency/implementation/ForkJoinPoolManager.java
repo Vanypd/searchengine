@@ -3,7 +3,6 @@ package searchengine.concurrency.implementation;
 import org.springframework.stereotype.Component;
 import searchengine.concurrency.ApplicationConcurrency;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 
